@@ -929,6 +929,10 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   const legacy = legacyProjects(orders, getOrderYear)
   const legacyOrderIds = new Set(legacy.map(project => project.order.id))
   const legacyProjectId = legacy.some(project => project.order.id === selectedProjectId) ? selectedProjectId : legacy[0]?.order.id ?? ''
+  // Its year buttons follow the picked 공사, so back and forward keep the year with it.
+  const legacyYears = [...new Set(legacy.map(project => project.year))]
+  const legacyYear = legacy.find(project => project.order.id === legacyProjectId)?.year ?? ''
+  const shownLegacy = legacy.filter(project => project.year === legacyYear)
   const expenseYears = orderYears.filter(year => !isLegacyYear(year))
   const expenseProjectId = view === 'adminExpenses' ? adminProjectId(orderYear) : view === 'legacyExpenses' ? legacyProjectId : selectedProjectId
   const selectedProject = view === 'adminExpenses'
@@ -2418,6 +2422,15 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                   </button>
                 ))}
               </div>
+            ) : view === 'legacyExpenses' ? (
+              <div className="year-switch" aria-label="22년 이전 년도">
+                {legacyYears.map((year) => (
+                  <button className={legacyYear === year ? 'active' : ''} key={year} type="button"
+                    onClick={() => selectProject(legacy.find(project => project.year === year)?.order.id ?? legacyProjectId)}>
+                    {year}
+                  </button>
+                ))}
+              </div>
             ) : view === 'worklogList' ? (
               <>
                 <span>{filteredWorkLogsForList.length}건</span>
@@ -2425,7 +2438,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                   {workLogListYear === 'all' ? '전체년도' : `${workLogListYear}년`}
                 </span>
               </>
-            ) : view === 'worklogs' || view === 'taxInvoices' || view === 'corporateCards' || view === 'legacyExpenses' ? null : (
+            ) : view === 'worklogs' || view === 'taxInvoices' || view === 'corporateCards' ? null : (
               <>
                 <span>{selectedProject?.orderNo}</span>
                 <span>{selectedProject?.client1}</span>
@@ -3508,7 +3521,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
               <label className="project-select-control">
                 공사 선택
                 <select value={legacyProjectId} onChange={(event) => selectProject(event.target.value)}>
-                  {legacy.map((project) => (
+                  {shownLegacy.map((project) => (
                     <option key={project.order.id} value={project.order.id}>{project.label}</option>
                   ))}
                 </select>
