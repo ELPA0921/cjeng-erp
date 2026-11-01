@@ -896,8 +896,12 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     return {...order,...total,year:getOrderYear(order),manDays:total.hours/8,status:getProjectStatus(order)}
   })
 
-  const orderYears = [...new Set([...orders.map((order) => getOrderYear(order)), orderYear])]
-    .filter(Boolean).sort((a, b) => compareText(a, b))
+  // 2019~2022 공사 show up only under 22년 이전 지출내역; every other screen starts at 2023.
+  const recentOrders = orders.filter(order => !isLegacyYear(getOrderYear(order)))
+  const orderYears = [...new Set([...recentOrders.map((order) => getOrderYear(order)), orderYear])]
+    .filter(year => year && !isLegacyYear(year)).sort((a, b) => compareText(a, b))
+  // An old link or back button may still carry year=2020; land on this year instead.
+  if (isLegacyYear(orderYear)) setOrderYear(currentYear)
   const filteredOrders = [...orders]
     .filter((order) => getOrderYear(order) === orderYear)
     .sort((a, b) => {
@@ -933,7 +937,6 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   const legacyYears = [...new Set(legacy.map(project => project.year))]
   const legacyYear = legacy.find(project => project.order.id === legacyProjectId)?.year ?? ''
   const shownLegacy = legacy.filter(project => project.year === legacyYear)
-  const expenseYears = orderYears.filter(year => !isLegacyYear(year))
   const expenseProjectId = view === 'adminExpenses' ? adminProjectId(orderYear) : view === 'legacyExpenses' ? legacyProjectId : selectedProjectId
   const selectedProject = view === 'adminExpenses'
     ? adminSummary(adminOrder(orderYear))
@@ -2311,7 +2314,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
             <button className={inGroup ? 'active' : ''}
               aria-current={inGroup ? 'page' : undefined}
               type="button" onClick={() => navigateTo(target)}>
-              <Icon name={target} /><span>{label}</span>{target === 'orders' && <small>{orders.length}</small>}
+              <Icon name={target} /><span>{label}</span>{target === 'orders' && <small>{recentOrders.length}</small>}
             </button>
             {menus && inGroup && (
               <nav className="expense-subnav" aria-label={`${label} 하위 메뉴`}>
@@ -2391,7 +2394,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
             {view === 'deliveries' ? <span>납품실적 관리</span> : view === 'home' ? (
               <>
                 <span>진행중 {activeProjectCount}건</span>
-                <span>전체 {orders.length}건</span>
+                <span>전체 {recentOrders.length}건</span>
               </>
             ) : isContactsView ? (
               <>
@@ -2411,7 +2414,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
               view === 'expenses' ||
               view === 'adminExpenses' ? (
               <div className="year-switch" aria-label="수주년도">
-                {(view === 'expenses' || view === 'adminExpenses' ? expenseYears : orderYears).map((year) => (
+                {orderYears.map((year) => (
                   <button
                     className={orderYear === year ? 'active' : ''}
                     key={year}
@@ -2449,14 +2452,14 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
         </header>
 
         {view === 'corporateCards' && <CorporateCards
-            orders={orders}
+            orders={recentOrders}
             expenses={expenses}
             cardAccounting={cardAccounting}
             onSave={patch => updateWorkspace(patch)}
             onCreateOrder={openNewOrderModalFor}
           />}
         {view === 'taxInvoices' && <TaxInvoices
-            orders={orders}
+            orders={recentOrders}
             expenses={expenses}
             cardAccounting={cardAccounting}
             onSave={patch => updateWorkspace(patch)}
