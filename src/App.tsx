@@ -18,7 +18,7 @@ import ModalClose from './ModalClose'
 import OutputMenu from './OutputMenu'
 import ExpenseSearch from './ExpenseSearch'
 import { emptyExpenseSearch } from './expenseSearchFilters'
-import { moveWithinDate, sameDateOrder } from './expenseOrder'
+import { moveWithinDate, newestFirstOrder } from './expenseOrder'
 import { syncEditedExpense, unlinkDeletedExpenses } from './cardAccounting'
 import type { Order, SharedOrderStore } from './orderTypes'
 import type { CardAccounting, Expense, WorkLog, SharedWorkspaceStore, WorkspaceData } from './workspaceTypes'
@@ -947,7 +947,8 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     : view === 'legacyExpenses' ? legacy.map(project => adminSummary(project.order))
     : yearlyProjectSummaries
   const legacyLabel = new Map(legacy.map(project => [project.order.id, project.label]))
-  // Rows sharing a date keep the order set with ▲▼ in both sort directions and on paper.
+  // Sorted by 일자, oldest first is newest first turned upside down, rows sharing a date included,
+  // so the order set with ▲▼ reads the same both ways and on paper.
   // ▲▼ rearrange rows on screen first; 적용 saves the new order and 초기화 drops it. The draft
   // belongs to one project, so it disappears when another project is shown.
   const [orderDraft, setOrderDraft] = useState<{ projectId: string; sequences: Record<string, number> } | null>(null)
@@ -955,13 +956,13 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   const shownExpenses = draftSequences
     ? expenses.map(expense => Object.hasOwn(draftSequences, expense.id) ? { ...expense, sequence: draftSequences[expense.id] } : expense)
     : expenses
-  const sameDate = sameDateOrder(shownExpenses)
+  const newestFirst = newestFirstOrder(shownExpenses)
   const filteredExpenses = [...shownExpenses]
     .filter((expense) => expense.projectId === expenseProjectId)
     .sort((a, b) => {
       if (expenseSort.key === 'date') {
-        const byDate = compareText(a.date, b.date)
-        return (expenseSort.direction === 'asc' ? byDate : -byDate) || sameDate(a, b)
+        const newest = compareText(b.date, a.date) || newestFirst(a, b)
+        return expenseSort.direction === 'asc' ? -newest : newest
       }
       const aValue =
         expenseSort.key === 'amount'
@@ -1153,7 +1154,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   // ▲▼ move the one checked row among the rows of its date, while the table is sorted by 일자.
   const [savingOrder, setSavingOrder] = useState(false)
   const expenseMove = (direction: -1 | 1) => selectedExpenseCount === 1 && expenseSort.key === 'date'
-    ? moveWithinDate(filteredExpenses, selectedExpenseIds[0], direction) : null
+    ? moveWithinDate(filteredExpenses, selectedExpenseIds[0], direction, expenseSort.direction === 'asc') : null
   function moveSelectedExpense(direction: -1 | 1) {
     const sequences = expenseMove(direction)
     if (!sequences || savingOrder) return
@@ -1218,14 +1219,14 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     ]),
   }
   // The paper 지출내역서 lists supply amounts in date order regardless of the on-screen sort.
-  // Rows on the same date print in the order the screen shows them.
+  // Rows on the same date print bottom-up from the newest-first screen.
   // A personal card's "card number" holds the owner's name, so it moves to 비고.
   // 관리비 sheets are titled by their name alone ("2026년 관리비 지출내역"), without the 26000_ prefix.
   const printExpenses = () => printExpenseSheet(
     selectedProject && isAdminProject(selectedProject.id) ? selectedProject.projectName
       // 22년 이전 공사 use the 공사명 as their 수주번호; print it once.
       : [...new Set([selectedProject?.orderNo, selectedProject?.client1, selectedProject?.projectName].filter(Boolean))].join('_'),
-    [...filteredExpenses].sort((a, b) => a.date.localeCompare(b.date) || sameDate(a, b)).map(expense => {
+    [...filteredExpenses].sort((a, b) => a.date.localeCompare(b.date) || newestFirst(b, a)).map(expense => {
       const personal = normalizeExpenseKind(expense.kind) === '개인카드'
       return {
         date: expense.date,
@@ -1609,7 +1610,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
 
     if (importedExpenses.length === 0) return
 
-    await setExpenses((current) => [...importedExpenses, ...current])
+    await setExpenses((current) => [...current, ...importedExpenses])
   }
 
   async function importWorkLogsFromCsv(records: CsvRecord[], projectId?: string) {
@@ -2179,7 +2180,9 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
       return
     }
 
+    // Added at the end, the way the server stores it, so it lists above that date's older rows.
     const saved = await setExpenses((current) => [
+      ...current,
       {
         id: crypto.randomUUID(),
         projectId: expenseForm.projectId,
@@ -2192,7 +2195,6 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
         vatAmount,
         amount,
       },
-      ...current,
     ], expenseEditRevision)
     if (!saved) return
     if (!isAdminProject(expenseForm.projectId)) setSelectedProjectId(expenseForm.projectId)
