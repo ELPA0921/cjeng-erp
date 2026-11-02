@@ -61,6 +61,8 @@ export function validateUpload(value: unknown) {
   if (!signatures[contentType]) throw new FileInputError('JPG, PNG, WebP 사진만 올릴 수 있습니다.')
   return {
     projectId: text(input.projectId, 200, true),
+    // The 공사's folder name in the shared drive, such as "24012 집진시스템 개선 공사".
+    folder: text(input.folder, 200),
     kind,
     meta: validateMeta(kind, input.meta ?? {}),
     contentType,
@@ -72,7 +74,20 @@ export function validateUpload(value: unknown) {
 export async function ensureFileSchema(sql: Sql) {
   await sql`CREATE TABLE IF NOT EXISTS cjeng_project_files (id text PRIMARY KEY, project_id text NOT NULL, kind text NOT NULL, meta jsonb NOT NULL, content_type text NOT NULL, data bytea NOT NULL, thumb bytea, size integer NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), created_by text)`
   await sql`CREATE INDEX IF NOT EXISTS cjeng_project_files_project ON cjeng_project_files (project_id, kind)`
+  // A picture kept in the shared drive has its Drive file id here and no bytes of its own; its preview stays.
+  await sql`ALTER TABLE cjeng_project_files ADD COLUMN IF NOT EXISTS drive_id text`
+  await sql`ALTER TABLE cjeng_project_files ALTER COLUMN data DROP NOT NULL`
 }
+
+const extension = (contentType: string) => contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : 'jpg'
+
+/** The file name a picture gets in the shared drive, from its details and the name it was uploaded with. */
+export function pictureName(kind: FileKind, meta: ProjectFileMeta, contentType: string) {
+  const stem = (meta.fileName ?? '').replace(/\.[^.]*$/, '')
+  const parts = kind === 'purchaseOrder' ? [meta.poNumber || meta.date, meta.vendor, stem] : [meta.date, meta.caption, stem]
+  return `${parts.filter(Boolean).join('_') || (kind === 'purchaseOrder' ? '발주서' : '사진')}.${extension(contentType)}`
+}
+export const kindFolder = (kind: FileKind) => kind === 'purchaseOrder' ? '발주서' : '사진대지'
 
 const toFile = (row: Record<string, unknown>): ProjectFile => ({
   id: String(row.id), projectId: String(row.project_id), kind: row.kind as FileKind, meta: row.meta as ProjectFileMeta,
@@ -84,18 +99,23 @@ export async function listFiles(sql: Sql, projectId: string) {
   return rows.map(toFile)
 }
 
-/** The picture itself, or its small JPEG preview when one was stored. */
+/**
+ * The picture itself, or its small JPEG preview when one was stored. A picture kept in the shared
+ * drive comes back with no data and its driveId, for the caller to fetch.
+ */
 export async function readFile(sql: Sql, id: string, thumb: boolean) {
   const [row] = thumb
-    ? await sql`SELECT CASE WHEN thumb IS NULL THEN content_type ELSE 'image/jpeg' END AS content_type, encode(coalesce(thumb, data), 'base64') AS data FROM cjeng_project_files WHERE id = ${id}`
-    : await sql`SELECT content_type, encode(data, 'base64') AS data FROM cjeng_project_files WHERE id = ${id}`
-  return row ? { contentType: String(row.content_type), data: Buffer.from(String(row.data), 'base64') } : null
+    ? await sql`SELECT CASE WHEN thumb IS NULL THEN content_type ELSE 'image/jpeg' END AS content_type, encode(coalesce(thumb, data), 'base64') AS data, drive_id FROM cjeng_project_files WHERE id = ${id}`
+    : await sql`SELECT content_type, encode(data, 'base64') AS data, drive_id FROM cjeng_project_files WHERE id = ${id}`
+  if (!row) return null
+  return { contentType: String(row.content_type), data: row.data == null ? null : Buffer.from(String(row.data), 'base64'), driveId: row.drive_id == null ? null : String(row.drive_id) }
 }
 
-export async function insertFile(sql: Sql, id: string, upload: ReturnType<typeof validateUpload>, email: string) {
-  const [row] = await sql`INSERT INTO cjeng_project_files (id, project_id, kind, meta, content_type, data, thumb, size, created_by)
-    VALUES (${id}, ${upload.projectId}, ${upload.kind}, ${JSON.stringify(upload.meta)}::jsonb, ${upload.contentType}, decode(${upload.data.toString('base64')}::text, 'base64'),
-      decode(${upload.thumb?.toString('base64') ?? null}::text, 'base64'), ${upload.data.length}, ${email})
+/** Stores a picture; with a driveId the original already sits in the shared drive and only its preview is kept here. */
+export async function insertFile(sql: Sql, id: string, upload: ReturnType<typeof validateUpload>, email: string, driveId: string | null = null) {
+  const [row] = await sql`INSERT INTO cjeng_project_files (id, project_id, kind, meta, content_type, data, thumb, size, created_by, drive_id)
+    VALUES (${id}, ${upload.projectId}, ${upload.kind}, ${JSON.stringify(upload.meta)}::jsonb, ${upload.contentType}, decode(${driveId ? null : upload.data.toString('base64')}::text, 'base64'),
+      decode(${upload.thumb?.toString('base64') ?? null}::text, 'base64'), ${upload.data.length}, ${email}, ${driveId})
     RETURNING id, project_id, kind, meta, content_type, size, created_at, created_by`
   return toFile(row)
 }
@@ -108,7 +128,22 @@ export async function updateFileMeta(sql: Sql, id: string, meta: unknown) {
   return row ? toFile(row) : null
 }
 
+/** Removes a picture; the result says where its original was, so a shared drive copy can be trashed too. */
 export async function deleteFile(sql: Sql, id: string) {
-  const rows = await sql`DELETE FROM cjeng_project_files WHERE id = ${id} RETURNING id`
+  const [row] = await sql`DELETE FROM cjeng_project_files WHERE id = ${id} RETURNING drive_id`
+  return row ? { driveId: row.drive_id == null ? null : String(row.drive_id) } : null
+}
+
+/** A few pictures still kept in the database, oldest first, for moving to the shared drive. */
+export async function listUnmoved(sql: Sql, limit: number) {
+  const rows = await sql`SELECT id, project_id, kind, meta, content_type, size, created_at, created_by, encode(data, 'base64') AS data FROM cjeng_project_files
+    WHERE drive_id IS NULL AND data IS NOT NULL ORDER BY created_at, id LIMIT ${limit}`
+  const [count] = await sql`SELECT count(*)::int AS left FROM cjeng_project_files WHERE drive_id IS NULL AND data IS NOT NULL`
+  return { files: rows.map(row => ({ ...toFile(row), data: Buffer.from(String(row.data), 'base64') })), left: Number(count.left) }
+}
+
+/** Points a picture at its shared drive copy and lets go of the bytes kept here. */
+export async function markMoved(sql: Sql, id: string, driveId: string) {
+  const rows = await sql`UPDATE cjeng_project_files SET drive_id = ${driveId}, data = NULL WHERE id = ${id} AND drive_id IS NULL RETURNING id`
   return rows.length > 0
 }

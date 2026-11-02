@@ -20,6 +20,7 @@ import ExpenseSearch from './ExpenseSearch'
 import { emptyExpenseSearch } from './expenseSearchFilters'
 import { moveWithinDate, newestFirstOrder } from './expenseOrder'
 import { PhotoAlbum, PurchaseOrderBoard } from './ProjectFiles'
+import { projectFolder } from './projectFileApi'
 import { useProjectFiles } from './useProjectFiles'
 import { syncEditedExpense, unlinkDeletedExpenses } from './cardAccounting'
 import type { Order, SharedOrderStore } from './orderTypes'
@@ -3298,11 +3299,11 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
               </div>
 
               {projectDetailTab === 'purchaseOrders' && (
-                <PurchaseOrderBoard projectId={selectedProject.id} orderNo={selectedProject.orderNo} store={projectFiles} />
+                <PurchaseOrderBoard projectId={selectedProject.id} orderNo={selectedProject.orderNo} folder={projectFolder(selectedProject)} store={projectFiles} />
               )}
 
               {projectDetailTab === 'photos' && (
-                <PhotoAlbum projectId={selectedProject.id} projectName={selectedProject.projectName} store={projectFiles} />
+                <PhotoAlbum projectId={selectedProject.id} projectName={selectedProject.projectName} folder={projectFolder(selectedProject)} store={projectFiles} />
               )}
 
               {projectDetailTab === 'worklogs' && (

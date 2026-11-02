@@ -63,7 +63,7 @@ async function deleteGroup(store: ProjectFilesStore, group: FileGroup) {
  * The pictures of one group while its form is open. Saved ones come from the store, so a retry after
  * a half-finished save neither repeats nor loses one; new ones wait here until saved.
  */
-function useGroupEditor(store: ProjectFilesStore, projectId: string, kind: FileKind, group: FileGroup | null) {
+function useGroupEditor(store: ProjectFilesStore, projectId: string, folder: string, kind: FileKind, group: FileGroup | null) {
   const [key] = useState(() => group?.key ?? crypto.randomUUID())
   const [pictures, setPictures] = useState<{ file: File; url: string }[]>([])
   const [removing, setRemoving] = useState<string[]>([])
@@ -88,7 +88,7 @@ function useGroupEditor(store: ProjectFilesStore, projectId: string, kind: FileK
       if (changed.some(([field, value]) => page.meta[field] !== value)) store.replaced(await updateProjectFile(page.id, { ...page.meta, ...Object.fromEntries(changed) }))
     }
     for (const picture of pictures) {
-      store.added(await uploadProjectFile(projectId, kind, { ...meta, group: key, fileName: picture.file.name }, await (kind === 'photo' ? preparePhoto : prepareImage)(picture.file)))
+      store.added(await uploadProjectFile(projectId, kind, { ...meta, group: key, fileName: picture.file.name }, await (kind === 'photo' ? preparePhoto : prepareImage)(picture.file), folder))
       setPictures(current => current.filter(item => item !== picture))
     }
     for (const id of removing) {
@@ -123,7 +123,8 @@ const emptyForm: PurchaseOrderForm = { vendor: '', item: '', date: '', poNumber:
  * there are more), 날짜 and 발주번호. A 발주서 may have several pages. Clicking a post opens its
  * pages in a new window.
  */
-export function PurchaseOrderBoard({ projectId, orderNo, store }: { projectId: string; orderNo: string; store: ProjectFilesStore }) {
+/** folder names the 공사's folder in the shared drive, such as "24012 집진시스템 개선 공사". */
+export function PurchaseOrderBoard({ projectId, orderNo, folder, store }: { projectId: string; orderNo: string; folder: string; store: ProjectFilesStore }) {
   const posts = fileGroups(store.files, 'purchaseOrder')
     .sort((a, b) => (b.meta.date ?? '').localeCompare(a.meta.date ?? '') || (b.meta.poNumber ?? '').localeCompare(a.meta.poNumber ?? '') || b.pages[0].createdAt.localeCompare(a.pages[0].createdAt))
   const [editing, setEditing] = useState<FileGroup | 'new' | null>(null)
@@ -163,7 +164,7 @@ export function PurchaseOrderBoard({ projectId, orderNo, store }: { projectId: s
         </tbody>
       </table>
     </div>}
-    {editing && <PurchaseOrderModal projectId={projectId} post={editing === 'new' ? null : editing} store={store} onClose={() => setEditing(null)} />}
+    {editing && <PurchaseOrderModal projectId={projectId} folder={folder} post={editing === 'new' ? null : editing} store={store} onClose={() => setEditing(null)} />}
   </>
 }
 
@@ -171,9 +172,9 @@ export function PurchaseOrderBoard({ projectId, orderNo, store }: { projectId: s
  * Registers or edits one 발주서. Pages are pasted, dropped or chosen in order; when editing,
  * pages can be added or taken away as well.
  */
-function PurchaseOrderModal({ projectId, post, store, onClose }: { projectId: string; post: FileGroup | null; store: ProjectFilesStore; onClose: () => void }) {
+function PurchaseOrderModal({ projectId, folder, post, store, onClose }: { projectId: string; folder: string; post: FileGroup | null; store: ProjectFilesStore; onClose: () => void }) {
   const [form, setForm] = useState<PurchaseOrderForm>(post ? { ...emptyForm, ...post.meta } : emptyForm)
-  const editor = useGroupEditor(store, projectId, 'purchaseOrder', post)
+  const editor = useGroupEditor(store, projectId, folder, 'purchaseOrder', post)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const set = (patch: Partial<PurchaseOrderForm>) => setForm(current => ({ ...current, ...patch }))
@@ -216,7 +217,7 @@ function PurchaseOrderModal({ projectId, post, store, onClose }: { projectId: st
  * 사진대지: the 공사's photos as an album. Photos chosen or dropped together become one 묶음 that
  * shares a 설명; a 묶음 can take more photos or lose some from its ✎ form.
  */
-export function PhotoAlbum({ projectId, projectName, store }: { projectId: string; projectName: string; store: ProjectFilesStore }) {
+export function PhotoAlbum({ projectId, projectName, folder, store }: { projectId: string; projectName: string; folder: string; store: ProjectFilesStore }) {
   const groups = fileGroups(store.files, 'photo')
     .sort((a, b) => (a.meta.date ?? '').localeCompare(b.meta.date ?? '') || a.pages[0].createdAt.localeCompare(b.pages[0].createdAt))
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
@@ -234,7 +235,7 @@ export function PhotoAlbum({ projectId, projectName, store }: { projectId: strin
     const group = crypto.randomUUID()
     for (const [index, file] of files.entries()) {
       setProgress({ done: index, total: files.length })
-      try { store.added(await uploadProjectFile(projectId, 'photo', { caption: '', date: fileDate(file), fileName: file.name, group }, await preparePhoto(file))) }
+      try { store.added(await uploadProjectFile(projectId, 'photo', { caption: '', date: fileDate(file), fileName: file.name, group }, await preparePhoto(file), folder)) }
       catch (failure) { failed.push(`${file.name}: ${message(failure)}`) }
     }
     setProgress(null)
@@ -277,14 +278,14 @@ export function PhotoAlbum({ projectId, projectName, store }: { projectId: strin
       </figure>)}
       {groups.length === 0 && <p className="files-note">아직 사진이 없습니다. 사진 올리기를 누르거나 이곳에 끌어다 놓으세요.</p>}
     </div>}
-    {editing && <PhotoGroupModal projectId={projectId} group={editing} store={store} onClose={() => setEditing(null)} />}
+    {editing && <PhotoGroupModal projectId={projectId} folder={folder} group={editing} store={store} onClose={() => setEditing(null)} />}
   </div>
 }
 
-function PhotoGroupModal({ projectId, group, store, onClose }: { projectId: string; group: FileGroup; store: ProjectFilesStore; onClose: () => void }) {
+function PhotoGroupModal({ projectId, folder, group, store, onClose }: { projectId: string; folder: string; group: FileGroup; store: ProjectFilesStore; onClose: () => void }) {
   const [caption, setCaption] = useState(group.meta.caption ?? '')
   const [date, setDate] = useState(group.meta.date ?? '')
-  const editor = useGroupEditor(store, projectId, 'photo', group)
+  const editor = useGroupEditor(store, projectId, folder, 'photo', group)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const drop = (event: DragEvent) => { event.preventDefault(); event.stopPropagation(); editor.add(imageFiles(event.dataTransfer.files)) }

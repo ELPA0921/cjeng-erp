@@ -3,6 +3,8 @@ export type FileKind = 'purchaseOrder' | 'photo'
 export type ProjectFile = { id: string; projectId: string; kind: FileKind; meta: Record<string, string>; contentType: string; size: number; createdAt: string; createdBy: string }
 export type PreparedImage = { contentType: string; data: string; thumb: string }
 
+/** The 공사's folder in the shared drive, such as "24012 집진시스템 개선 공사". */
+export const projectFolder = (project: { orderNo: string; projectName: string }) => [project.orderNo, project.projectName].filter(Boolean).join(' ')
 export const fileUrl = (id: string, thumb = false) => `/api/files?id=${encodeURIComponent(id)}${thumb ? '&thumb=1' : ''}`
 export const downloadUrl = (id: string, name: string) => `/api/files?id=${encodeURIComponent(id)}&download=1&name=${encodeURIComponent(name)}`
 
@@ -16,8 +18,8 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const listProjectFiles = (projectId: string) =>
   request<{ files: ProjectFile[] }>(`/api/files?projectId=${encodeURIComponent(projectId)}`).then(body => body.files)
-export const uploadProjectFile = (projectId: string, kind: FileKind, meta: Record<string, string>, image: PreparedImage) =>
-  request<{ file: ProjectFile }>('/api/files', { method: 'POST', body: JSON.stringify({ projectId, kind, meta, ...image }) }).then(body => body.file)
+export const uploadProjectFile = (projectId: string, kind: FileKind, meta: Record<string, string>, image: PreparedImage, folder = '') =>
+  request<{ file: ProjectFile }>('/api/files', { method: 'POST', body: JSON.stringify({ projectId, folder, kind, meta, ...image }) }).then(body => body.file)
 export const updateProjectFile = (id: string, meta: Record<string, string>) =>
   request<{ file: ProjectFile }>('/api/files', { method: 'PATCH', body: JSON.stringify({ id, meta }) }).then(body => body.file)
 export const deleteProjectFile = (id: string) => request<{ ok: true }>(`/api/files?id=${encodeURIComponent(id)}`, { method: 'DELETE' })

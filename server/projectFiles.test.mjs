@@ -1,7 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { PGlite } from '@electric-sql/pglite'
-import { deleteFile, ensureFileSchema, insertFile, listFiles, readFile, updateFileMeta, validateUpload } from './projectFiles.ts'
+import { generateKeyPairSync } from 'node:crypto'
+import { createDrive, driveConfig } from './googleDrive.ts'
+import { deleteFile, ensureFileSchema, insertFile, listFiles, listUnmoved, markMoved, pictureName, readFile, updateFileMeta, validateUpload } from './projectFiles.ts'
 
 // Same stand-in for the Neon driver as workspaceDb.test.mjs: tagged templates become parameterized queries.
 function neonLike(db) {
@@ -25,13 +27,13 @@ test('a 발주서 picture is stored, listed, read back, edited and deleted', asy
   assert.equal(file.size, png.length)
   await insertFile(sql, 'f2', validateUpload(upload({ kind: 'photo', projectId: 'shared-2025-25002', meta: { caption: '설치 전' } })), 'staff@cjeng.kr')
   assert.deepEqual((await listFiles(sql, 'shared-2025-25001')).map(row => row.id), ['f1'])
-  assert.deepEqual(await readFile(sql, 'f1', false), { contentType: 'image/png', data: png })
-  assert.deepEqual(await readFile(sql, 'f1', true), { contentType: 'image/jpeg', data: jpeg })
-  assert.deepEqual(await readFile(sql, 'f2', true), { contentType: 'image/png', data: png })
+  assert.deepEqual(await readFile(sql, 'f1', false), { contentType: 'image/png', data: png, driveId: null })
+  assert.deepEqual(await readFile(sql, 'f1', true), { contentType: 'image/jpeg', data: jpeg, driveId: null })
+  assert.deepEqual(await readFile(sql, 'f2', true), { contentType: 'image/png', data: png, driveId: null })
   assert.equal((await updateFileMeta(sql, 'f1', { vendor: '연일철강', poNumber: 'CJE-2502072' })).meta.poNumber, 'CJE-2502072')
   assert.equal(await updateFileMeta(sql, 'missing', {}), null)
-  assert.equal(await deleteFile(sql, 'f1'), true)
-  assert.equal(await deleteFile(sql, 'f1'), false)
+  assert.deepEqual(await deleteFile(sql, 'f1'), { driveId: null })
+  assert.equal(await deleteFile(sql, 'f1'), null)
   assert.equal(await readFile(sql, 'f1', false), null)
 })
 
@@ -49,8 +51,8 @@ test('/api/files lets signed-in staff upload, list, view, download and delete pi
   const { createFilesHandler } = await import('../api/files.ts')
   const sql = neonLike(new PGlite())
   const origin = 'https://erp.example.test'
-  const fileStore = { sql: () => sql, ensureFileSchema, listFiles, readFile, insertFile, updateFileMeta, deleteFile }
-  const deps = signedIn => ({ readSession: async () => signedIn ? { email: 'staff@cjeng.kr' } : null, sameOrigin: req => req.headers.origin === origin, settings: () => ({ storage: 'postgres', origin }), fileStore })
+  const fileStore = { sql: () => sql, ensureFileSchema, listFiles, readFile, insertFile, updateFileMeta, deleteFile, listUnmoved, markMoved }
+  const deps = signedIn => ({ readSession: async () => signedIn ? { email: 'staff@cjeng.kr', role: 'staff' } : null, sameOrigin: req => req.headers.origin === origin, settings: () => ({ storage: 'postgres', origin }), fileStore, drive: () => null })
   const call = async (method, url, body, signedIn = true, headers = { origin }) => {
     const res = { statusCode: 200, headers: {}, setHeader(key, value) { this.headers[key] = value }, end(value) { this.body = value } }
     await createFilesHandler(deps(signedIn))({ method, url, headers, body }, res)
@@ -70,4 +72,87 @@ test('/api/files lets signed-in staff upload, list, view, download and delete pi
   assert.equal(JSON.parse((await call('PATCH', '/api/files', { id: created.id, meta: { vendor: '연일철강(주)' } })).body).file.meta.vendor, '연일철강(주)')
   assert.equal((await call('DELETE', `/api/files?id=${created.id}`)).statusCode, 200)
   assert.equal((await call('GET', `/api/files?id=${created.id}`)).statusCode, 404)
+})
+
+// A stand-in shared drive that keeps pictures in memory.
+function memoryDrive() {
+  const files = new Map()
+  let next = 0
+  return {
+    files,
+    async upload(path, name, contentType, data) { const id = `d${++next}`; files.set(id, { path, name, contentType, data, trashed: false }); return id },
+    async download(id) { const file = files.get(id); return file ? file.data : null },
+    async trash(id) { const file = files.get(id); if (file) file.trashed = true },
+  }
+}
+
+test('with a shared drive, originals go to the 공사 folder and only previews stay in the database', async () => {
+  const { createFilesHandler } = await import('../api/files.ts')
+  const sql = neonLike(new PGlite())
+  const origin = 'https://erp.example.test'
+  const drive = memoryDrive()
+  const fileStore = { sql: () => sql, ensureFileSchema, listFiles, readFile, insertFile, updateFileMeta, deleteFile, listUnmoved, markMoved }
+  let role = 'staff'
+  const handler = createFilesHandler({ readSession: async () => ({ email: 'staff@cjeng.kr', role }), sameOrigin: req => req.headers.origin === origin, settings: () => ({ storage: 'postgres', origin }), fileStore, drive: () => drive })
+  const call = async (method, url, body) => {
+    const res = { statusCode: 200, headers: {}, setHeader(key, value) { this.headers[key] = value }, end(value) { this.body = value } }
+    await handler({ method, url, headers: { origin }, body }, res)
+    return res
+  }
+  // One picture saved before the drive was set up.
+  await ensureFileSchema(sql)
+  await insertFile(sql, 'old', validateUpload(upload({ projectId: 'shared-2024-24012', meta: { vendor: '태진', poNumber: 'CJE-1', fileName: '24012-01.png' } })), 'staff@cjeng.kr')
+
+  const created = JSON.parse((await call('POST', '/api/files', upload({ folder: '25001 신규 공사', thumb: jpeg.toString('base64'), meta: { vendor: '연일철강', poNumber: 'CJE-2502071', fileName: 'image.png' } }))).body).file
+  const [stored] = drive.files.values()
+  assert.deepEqual([stored.path, stored.name, stored.data], [['25001 신규 공사', '발주서'], 'CJE-2502071_연일철강_image.png', png])
+  assert.deepEqual(await readFile(sql, created.id, false), { contentType: 'image/png', data: null, driveId: 'd1' })
+  assert.deepEqual((await call('GET', '/api/files?id=' + created.id)).body, png)
+  assert.deepEqual((await call('GET', '/api/files?thumb=1&id=' + created.id)).body, jpeg)
+
+  // Only an admin moves the older pictures, and each lands in its 공사's folder.
+  assert.equal((await call('POST', '/api/files', { action: 'moveToDrive', folders: {} })).statusCode, 403)
+  role = 'admin'
+  assert.deepEqual(JSON.parse((await call('POST', '/api/files', { action: 'moveToDrive', folders: { 'shared-2024-24012': '24012 집진시스템 개선 공사' } })).body), { moved: 1, left: 0 })
+  assert.deepEqual(drive.files.get('d2').path, ['24012 집진시스템 개선 공사', '발주서'])
+  assert.deepEqual((await call('GET', '/api/files?id=old')).body, png)
+  assert.deepEqual(JSON.parse((await call('POST', '/api/files', { action: 'moveToDrive', folders: {} })).body), { moved: 0, left: 0 })
+
+  // Deleting sends the drive copy to the trash; a copy missing from the drive reads as not found.
+  assert.equal((await call('DELETE', '/api/files?id=' + created.id)).statusCode, 200)
+  assert.equal(drive.files.get('d1').trashed, true)
+  drive.files.delete('d2')
+  assert.equal((await call('GET', '/api/files?id=old')).statusCode, 404)
+})
+
+test('picture names in the drive come from their details', () => {
+  assert.equal(pictureName('purchaseOrder', { poNumber: '', date: '2025-02-07', vendor: '연일철강', fileName: '' }, 'image/jpeg'), '2025-02-07_연일철강.jpg')
+  assert.equal(pictureName('photo', { date: '2026-11-02', caption: '설치 전', fileName: '20261102_101530.jpg' }, 'image/jpeg'), '2026-11-02_설치 전_20261102_101530.jpg')
+  assert.equal(pictureName('photo', {}, 'image/jpeg'), '사진.jpg')
+})
+
+test('the drive client signs in as the service account, makes folders once and uploads into them', async () => {
+  assert.equal(driveConfig({}), null)
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+  const key = JSON.stringify({ client_email: 'erp@cjeng.iam.gserviceaccount.com', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }) })
+  const config = driveConfig({ GOOGLE_DRIVE_SERVICE_ACCOUNT: key, GOOGLE_DRIVE_FOLDER_ID: 'root' })
+  const requests = []
+  const reply = body => new Response(JSON.stringify(body), { status: 200 })
+  const drive = createDrive(config, async (url, init = {}) => {
+    const { pathname, searchParams } = new URL(url)
+    requests.push((init.method ?? 'GET') + ' ' + pathname)
+    if (pathname === '/token') return reply({ access_token: 'token', expires_in: 3600 })
+    assert.equal(init.headers.Authorization, 'Bearer token')
+    if (pathname === '/drive/v3/files' && !init.method) return reply({ files: searchParams.get('q').includes("name = '발주서'") ? [{ id: 'po-folder' }] : [] })
+    if (pathname === '/drive/v3/files') return reply({ id: 'project-folder' })
+    if (pathname.startsWith('/upload/')) { assert.match(init.body.toString(), /"parents":\["po-folder"\]/); return reply({ id: 'file-1' }) }
+    if (init.method === 'PATCH') return new Response('{}', { status: 404 })
+    return new Response(png)
+  })
+  assert.equal(await drive.upload(['24012 집진시스템 개선 공사', '발주서'], 'CJE-1_태진.png', 'image/png', png), 'file-1')
+  assert.equal(await drive.upload(['24012 집진시스템 개선 공사', '발주서'], 'CJE-1_태진.png', 'image/png', png), 'file-1')
+  assert.deepEqual(await drive.download('file-1'), png)
+  await drive.trash('gone')
+  // One sign-in, the two folders looked up (one made) once, then two uploads.
+  assert.deepEqual(requests, ['POST /token', 'GET /drive/v3/files', 'POST /drive/v3/files', 'GET /drive/v3/files', 'POST /upload/drive/v3/files', 'POST /upload/drive/v3/files', 'GET /drive/v3/files/file-1', 'PATCH /drive/v3/files/gone'])
 })
