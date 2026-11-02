@@ -11,9 +11,9 @@ export type ProjectFile = { id: string; projectId: string; kind: FileKind; meta:
 
 // Text fields each kind keeps, with their longest allowed length.
 const metaFields: Record<FileKind, Record<string, number>> = {
-  // A 발주서 of several pages keeps one picture per page, tied together by the same group.
+  // A 발주서 of several pages, or a 사진대지 묶음, keeps one picture per row tied together by the same group.
   purchaseOrder: { vendor: 200, item: 500, date: 10, poNumber: 50, fileName: 200, group: 100 },
-  photo: { caption: 500, date: 10, fileName: 200 },
+  photo: { caption: 500, date: 10, fileName: 200, group: 100 },
 }
 // Uploads arrive as base64 JSON, so the decoded picture stays under Vercel's 4.5MB request body.
 export const maxFileBytes = 3_000_000

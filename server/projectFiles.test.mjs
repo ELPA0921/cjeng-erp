@@ -42,7 +42,7 @@ test('uploads must be real pictures of an allowed type with tidy details', () =>
   assert.throws(() => validateUpload(upload({ meta: { date: '25.02.07' } })), /날짜/)
   assert.throws(() => validateUpload(upload({ projectId: '' })))
   assert.throws(() => validateUpload(upload({ data: 'not base64!' })))
-  assert.deepEqual(validateUpload(upload({ kind: 'photo', meta: { caption: ' 설치 후 ', vendor: '무시됨' } })).meta, { caption: '설치 후', date: '', fileName: '' })
+  assert.deepEqual(validateUpload(upload({ kind: 'photo', meta: { caption: ' 설치 후 ', vendor: '무시됨' } })).meta, { caption: '설치 후', date: '', fileName: '', group: '' })
 })
 
 test('/api/files lets signed-in staff upload, list, view, download and delete pictures', async () => {

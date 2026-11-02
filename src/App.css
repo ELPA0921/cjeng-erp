@@ -1639,7 +1639,7 @@ input:disabled {
   color: var(--danger);
 }
 
-.purchase-order-modal {
+.file-group-modal {
   display: grid;
   gap: 14px;
   width: min(760px, 100%);
@@ -1769,6 +1769,7 @@ input:disabled {
 }
 
 .photo-open {
+  position: relative;
   display: block;
   aspect-ratio: 4 / 3;
   border: 0;
@@ -1781,6 +1782,19 @@ input:disabled {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* How many photos a 묶음 holds, over the corner of its first photo. */
+.photo-count {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.65);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .photo-card figcaption {
