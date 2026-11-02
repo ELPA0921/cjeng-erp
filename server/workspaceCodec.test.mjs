@@ -40,3 +40,11 @@ test('an arranged expense keeps its same-date sequence through packing and valid
   assert.deepEqual(validateWorkspace(packWorkspace(withSequence)), withSequence)
   assert.throws(() => validateWorkspace({ ...data, expenses:[{ ...arranged, sequence:'2' }] }))
 })
+
+test('a 발주 및 견적 현황 line may leave its dates and amount blank, but a filled date must be real', () => {
+  const quote = { id:'p1', projectId:'o-1', quoteDate:'2023-09-01', orderDate:'', completedDate:'', vendor:'케이디엠에스', manager:'김용선', item:'TOC 자동측정기', note:'' }
+  assert.deepEqual(validateWorkspace({ ...data, purchases:[quote] }).purchases, [quote])
+  assert.deepEqual(validateWorkspace({ ...data, purchases:[{ id:'p2', projectId:'o-1', amount:1000 }] }).purchases, [{ id:'p2', projectId:'o-1', amount:1000, quoteDate:'', orderDate:'', completedDate:'', vendor:'', manager:'', item:'', note:'' }])
+  assert.throws(() => validateWorkspace({ ...data, purchases:[{ ...quote, orderDate:'23.04.25' }] }))
+  assert.throws(() => validateWorkspace({ ...data, purchases:[{ ...quote, amount:'1,000' }] }))
+})

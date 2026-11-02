@@ -32,15 +32,18 @@ export type WorkLog = {
   hours: number
 }
 
+/** One line of a 공사's 발주 및 견적 현황: a quote asked for, ordered and delivered. Any date may still be blank. */
 export type PurchaseOrder = {
   id: string
   projectId: string
+  quoteDate: string
   orderDate: string
+  completedDate: string
   vendor: string
+  manager: string
   item: string
-  quantity: string
-  amount: number
-  status: '요청' | '발주완료' | '입고완료'
+  amount?: number
+  note: string
 }
 
 export const cardAccountingStatuses = ['회계반영', '강제회계반영'] as const

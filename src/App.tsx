@@ -115,12 +115,14 @@ type ProjectSortKey =
   | 'manDays'
   | 'purchaseAmount'
 type PurchaseOrderSortKey =
+  | 'quoteDate'
   | 'orderDate'
+  | 'completedDate'
   | 'vendor'
+  | 'manager'
   | 'item'
-  | 'quantity'
-  | 'status'
   | 'amount'
+  | 'note'
 
 const emptyVendorContact: VendorContact = {
   company: '',
@@ -717,7 +719,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   const [purchaseOrderSort, setPurchaseOrderSort] = useState<{
     key: PurchaseOrderSortKey
     direction: SortDirection
-  }>({ key: 'orderDate', direction: 'desc' })
+  }>({ key: 'orderDate', direction: 'asc' })
   const [localWorkLogs, setLocalWorkLogs] = useState(() =>
     remapProjectReferences(loadStoredData('cost-app-worklogs-v2', defaultWorkLogs), migratedProjectIds),
   )
@@ -890,7 +892,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   }
   for(const expense of expenses){const total=totalFor(expense.projectId);total.cost+=expense.amount;total.records++}
   for(const work of workLogs){const total=totalFor(work.projectId);total.hours+=work.hours;total.records++}
-  for(const purchase of purchaseOrders){const total=totalFor(purchase.projectId);total.purchaseAmount+=purchase.amount;total.records++}
+  for(const purchase of purchaseOrders){const total=totalFor(purchase.projectId);total.purchaseAmount+=purchase.amount ?? 0;total.records++}
   const projectSummaries=orders.map(order=>{
     const total=totalFor(order.id)
     return {...order,...total,year:getOrderYear(order),manDays:total.hours/8,status:getProjectStatus(order)}
@@ -1034,18 +1036,23 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     }),
     { days: new Set<string>(), hours: 0 },
   )
+  // Blank cells (a quote not ordered yet, an amount not settled) stay at the bottom either way;
+  // rows that tie keep the 발주 및 견적 현황 order.
   const filteredPurchaseOrders = [...purchaseOrders]
     .filter((purchaseOrder) => purchaseOrder.projectId === selectedProjectId)
     .sort((a, b) => {
-      const aValue = a[purchaseOrderSort.key]
-      const bValue = b[purchaseOrderSort.key]
+      const aValue = a[purchaseOrderSort.key] ?? ''
+      const bValue = b[purchaseOrderSort.key] ?? ''
+      const blank = Number(aValue === '') - Number(bValue === '')
+      if (blank) return blank
       const result =
         typeof aValue === 'number' && typeof bValue === 'number'
           ? aValue - bValue
-          : compareText(aValue, bValue)
+          : compareText(String(aValue), String(bValue))
 
       return purchaseOrderSort.direction === 'asc' ? result : -result
     })
+  const purchaseOrderTotal = filteredPurchaseOrders.reduce((sum, purchaseOrder) => sum + (purchaseOrder.amount ?? 0), 0)
   const activeProjects = projectSummaries
     .filter(project => project.status === '진행중')
     .sort((a, b) => compareText(b.orderDate, a.orderDate))
@@ -3391,43 +3398,50 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                 <>
                   <div className="panel-heading">
                     <h3>발주 내역</h3>
-                    <span>이 공사에 연결된 발주서 내용</span>
+                    <span>이 공사의 발주 및 견적 현황</span>
                   </div>
                   <div className="table-wrap">
                     <table>
                       <thead>
                         <tr>
-                          <th>
-                            {renderPurchaseOrderSortButton('orderDate', '발주일')}
-                          </th>
-                          <th>{renderPurchaseOrderSortButton('vendor', '발주처')}</th>
-                          <th>{renderPurchaseOrderSortButton('item', '품목')}</th>
-                          <th>{renderPurchaseOrderSortButton('quantity', '수량')}</th>
-                          <th>{renderPurchaseOrderSortButton('status', '상태')}</th>
+                          <th>{renderPurchaseOrderSortButton('quoteDate', '견적의뢰일')}</th>
+                          <th>{renderPurchaseOrderSortButton('orderDate', '발주일')}</th>
+                          <th>{renderPurchaseOrderSortButton('completedDate', '완료일')}</th>
+                          <th>{renderPurchaseOrderSortButton('vendor', '거래처')}</th>
+                          <th>{renderPurchaseOrderSortButton('manager', '담당자')}</th>
+                          <th>{renderPurchaseOrderSortButton('item', '내용')}</th>
                           <th>{renderPurchaseOrderSortButton('amount', '금액')}</th>
+                          <th>{renderPurchaseOrderSortButton('note', '비고')}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filteredPurchaseOrders.map((purchaseOrder) => (
                           <tr key={purchaseOrder.id}>
-                            <td className="date-cell">{purchaseOrder.orderDate}</td>
+                            <td className="date-cell">{purchaseOrder.quoteDate || '-'}</td>
+                            <td className="date-cell">{purchaseOrder.orderDate || '-'}</td>
+                            <td className="date-cell">{purchaseOrder.completedDate || '-'}</td>
                             <td>{purchaseOrder.vendor}</td>
+                            <td>{purchaseOrder.manager}</td>
                             <td>{purchaseOrder.item}</td>
-                            <td>{purchaseOrder.quantity}</td>
-                            <td>
-                              <span className="status">
-                                {purchaseOrder.status}
-                              </span>
-                            </td>
-                            <td>{formatMoney(purchaseOrder.amount)}</td>
+                            <td className="numeric-cell">{purchaseOrder.amount === undefined ? '-' : formatMoney(purchaseOrder.amount)}</td>
+                            <td>{purchaseOrder.note}</td>
                           </tr>
                         ))}
                         {filteredPurchaseOrders.length === 0 && (
                           <tr>
-                            <td colSpan={6}>등록된 발주 내역이 없습니다.</td>
+                            <td colSpan={8}>등록된 발주 내역이 없습니다.</td>
                           </tr>
                         )}
                       </tbody>
+                      {filteredPurchaseOrders.length > 0 && (
+                        <tfoot>
+                          <tr>
+                            <td colSpan={6}>총합</td>
+                            <td className="numeric-cell">{formatMoney(purchaseOrderTotal)}</td>
+                            <td></td>
+                          </tr>
+                        </tfoot>
+                      )}
                     </table>
                   </div>
                 </>

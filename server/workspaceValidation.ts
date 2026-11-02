@@ -75,8 +75,12 @@ export function validateCollection(name: WorkspaceCollection, value: unknown) {
     return workLogs
   }
   if (name === 'purchases') {
-    const purchases=records(value,['projectId','orderDate','vendor','item','quantity','status'],['amount'],['projectId','orderDate','vendor','item','quantity','status','amount'],['orderDate'])
-    for (const row of purchases) if (!['요청','발주완료','입고완료'].includes(String(row.status))) throw new Error('발주 상태를 확인하세요.')
+    const dates=['quoteDate','orderDate','completedDate']
+    const purchases=records(value,['projectId',...dates,'vendor','manager','item','note'],['amount'],['projectId'],[])
+    for (const row of purchases) {
+      for (const field of [...dates,'vendor','manager','item','note']) row[field] ??= ''
+      for (const field of dates) if (row[field]) day(row[field])
+    }
     return purchases
   }
   if (name === 'deliveries') {
