@@ -882,10 +882,11 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     setIsVendorModalOpen(false)
     if (contactTab === 'order' && vendorSearchScope === 'item') setVendorSearchScope('all')
   }
-  const { canGoBack, canGoForward } = useBrowserNavigation({ view, year: orderYear, projectId: selectedProjectId, projectTab: projectDetailTab, month: workLogMonth }, restoreNavigation)
+  useBrowserNavigation({ view, year: orderYear, projectId: selectedProjectId, projectTab: projectDetailTab, month: workLogMonth }, restoreNavigation)
   const navigateTo = (nextView: View) => { setSelectedExpenseIds([]); setView(nextView) }
-  const goBack = () => window.history.back()
-  const goForward = () => window.history.forward()
+  // The list a project was opened from, so 목록 returns there; 수주대장 after a reload.
+  const projectListView = useRef<View>('orders')
+  const goToList = () => navigateTo(projectListView.current)
 
   const projectTotals = new Map<string,{cost:number;hours:number;purchaseAmount:number;records:number}>()
   const totalFor=(id:string)=>{
@@ -1811,6 +1812,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   }
 
   function openProject(projectId: string) {
+    if (view !== 'project') projectListView.current = view
     selectProject(projectId)
     setProjectDetailTab('worklogs')
     navigateTo('project')
@@ -2350,26 +2352,6 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
 
       <section className="workspace">
         <header className="topbar">
-          <div className="history-actions" aria-label="화면 이동">
-            <button
-              aria-label="뒤로가기"
-              disabled={!canGoBack}
-              title="뒤로가기"
-              type="button"
-              onClick={goBack}
-            >
-              ←
-            </button>
-            <button
-              aria-label="앞으로가기"
-              disabled={!canGoForward}
-              title="앞으로가기"
-              type="button"
-              onClick={goForward}
-            >
-              →
-            </button>
-          </div>
           <div>
             <p className="eyebrow">
               {expenseMenus.some(([screen]) => screen === view) ? '지출내역' : tradeMenus.some(([screen]) => screen === view) ? '거래관리' : view === 'home'
@@ -2465,6 +2447,11 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
               </>
             )}
           </div>
+          {view === 'project' && (
+            <button className="list-button" type="button" onClick={goToList}>
+              목록
+            </button>
+          )}
         </header>
 
         {view === 'corporateCards' && <CorporateCards
