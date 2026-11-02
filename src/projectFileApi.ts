@@ -7,7 +7,8 @@ export const fileUrl = (id: string, thumb = false) => `/api/files?id=${encodeURI
 export const downloadUrl = (id: string, name: string) => `/api/files?id=${encodeURIComponent(id)}&download=1&name=${encodeURIComponent(name)}`
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { ...init, headers: init?.body ? { 'Content-Type': 'application/json' } : undefined })
+  // The server only takes changes sent as JSON, so DELETE says so too even without a body.
+  const response = await fetch(url, { ...init, headers: init?.method && init.method !== 'GET' ? { 'Content-Type': 'application/json' } : undefined })
   const body = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(body.error ?? '사진 저장소에 연결할 수 없습니다.')
   return body as T
