@@ -31,7 +31,7 @@ function FilesUnavailable({ store }: { store: ProjectFilesStore }) {
   return null
 }
 
-/** One 발주서 with its pages, or one 사진대지 묶음 with its photos. The first picture carries the details. */
+/** One 발주서 with its pages. The first picture carries the details. */
 type FileGroup = { key: string; pages: ProjectFile[]; meta: Record<string, string> }
 
 // Pictures of one group share meta.group; ones saved before groups existed have none and go by their own id.
@@ -88,7 +88,7 @@ function useGroupEditor(store: ProjectFilesStore, projectId: string, folder: str
       if (changed.some(([field, value]) => page.meta[field] !== value)) store.replaced(await updateProjectFile(page.id, { ...page.meta, ...Object.fromEntries(changed) }))
     }
     for (const picture of pictures) {
-      store.added(await uploadProjectFile(projectId, kind, { ...meta, group: key, fileName: picture.file.name }, await (kind === 'photo' ? preparePhoto : prepareImage)(picture.file), folder))
+      store.added(await uploadProjectFile(projectId, kind, { ...meta, group: key, fileName: picture.file.name }, await prepareImage(picture.file), folder))
       setPictures(current => current.filter(item => item !== picture))
     }
     for (const id of removing) {
@@ -214,36 +214,35 @@ function PurchaseOrderModal({ projectId, folder, post, store, onClose }: { proje
 }
 
 /**
- * 사진대지: the 공사's photos as an album. Photos chosen or dropped together become one 묶음 that
- * shares a 설명; a 묶음 can take more photos or lose some from its ✎ form.
+ * 사진대지: the 공사's photos laid out one by one in a grid. Several photos chosen, dropped or
+ * pasted together each get their own card; ✎ edits one photo's 설명 and 날짜.
  */
 export function PhotoAlbum({ projectId, projectName, folder, store }: { projectId: string; projectName: string; folder: string; store: ProjectFilesStore }) {
-  const groups = fileGroups(store.files, 'photo')
-    .sort((a, b) => (a.meta.date ?? '').localeCompare(b.meta.date ?? '') || a.pages[0].createdAt.localeCompare(b.pages[0].createdAt))
+  const photos = store.files.filter(file => file.kind === 'photo')
+    .sort((a, b) => (a.meta.date ?? '').localeCompare(b.meta.date ?? '') || a.createdAt.localeCompare(b.createdAt))
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [error, setError] = useState('')
   const [dragging, setDragging] = useState(false)
-  const [editing, setEditing] = useState<FileGroup | null>(null)
+  const [editing, setEditing] = useState<ProjectFile | null>(null)
   const ready = store.shared && store.loaded && !store.error
-  const items = viewerItems(groups, ({ meta }) => [projectName, meta.caption || meta.date].filter(Boolean).join(' · '),
-    ({ meta }, index) => [projectName, meta.date, meta.caption || String(index + 1)].filter(Boolean).join('_'))
+  const items = photos.map((photo, index) => ({ id: photo.id, title: [projectName, photo.meta.caption || photo.meta.date].filter(Boolean).join(' · '), name: [projectName, photo.meta.date, photo.meta.caption || String(index + 1)].filter(Boolean).join('_') }))
 
   async function upload(files: File[]) {
     if (!ready || progress || !files.length) return
     setError('')
     const failed: string[] = []
-    const group = crypto.randomUUID()
     for (const [index, file] of files.entries()) {
       setProgress({ done: index, total: files.length })
-      try { store.added(await uploadProjectFile(projectId, 'photo', { caption: '', date: fileDate(file), fileName: file.name, group }, await preparePhoto(file), folder)) }
+      try { store.added(await uploadProjectFile(projectId, 'photo', { caption: '', date: fileDate(file), fileName: file.name }, await preparePhoto(file), folder)) }
       catch (failure) { failed.push(`${file.name}: ${message(failure)}`) }
     }
     setProgress(null)
     if (failed.length) setError(`${failed.length}장을 올리지 못했습니다. ${failed.join(' / ')}`)
   }
   usePastedImages(upload, ready && !editing)
-  const remove = (group: FileGroup) => {
-    if (window.confirm(group.pages.length > 1 ? `이 묶음의 사진 ${group.pages.length}장을 모두 삭제할까요?` : '이 사진을 삭제할까요?')) deleteGroup(store, group)
+  const remove = async (photo: ProjectFile) => {
+    if (!window.confirm('이 사진을 삭제할까요?')) return
+    try { await deleteProjectFile(photo.id); store.removed(photo.id) } catch (failure) { window.alert(message(failure)) }
   }
 
   return <div className={`photo-album${dragging ? ' dragging' : ''}`}
@@ -253,7 +252,7 @@ export function PhotoAlbum({ projectId, projectName, folder, store }: { projectI
     <div className="panel-heading">
       <h3>사진대지</h3>
       <div className="files-heading-actions">
-        <span>{progress ? `${progress.done + 1} / ${progress.total}장 올리는 중…` : '여러 장을 함께 고르거나 끌어다 놓으면 한 묶음이 됩니다. Ctrl+V로 붙여넣을 수도 있습니다.'}</span>
+        <span>{progress ? `${progress.done + 1} / ${progress.total}장 올리는 중…` : '여러 장을 한 번에 고르거나 끌어다 놓을 수 있습니다. Ctrl+V로 붙여넣을 수도 있습니다.'}</span>
         {ready && <label className={`primary-button compact-button file-picker${progress ? ' disabled' : ''}`}>
           사진 올리기
           <input type="file" accept="image/*" multiple disabled={!!progress} onChange={event => { const files = imageFiles(event.target.files); event.target.value = ''; upload(files) }} />
@@ -263,53 +262,49 @@ export function PhotoAlbum({ projectId, projectName, folder, store }: { projectI
     <FilesUnavailable store={store} />
     {error && <p className="files-note error">{error}</p>}
     {ready && <div className="photo-grid">
-      {groups.map(group => <figure key={group.key} className="photo-card">
-        <button type="button" className="photo-open" title="새 창에서 크게 보기" onClick={() => openImageViewer(items, items.findIndex(item => item.id === group.pages[0].id))}>
-          <img src={fileUrl(group.pages[0].id, true)} alt={group.meta.caption || `${group.meta.date} 사진`} loading="lazy" />
-          {group.pages.length > 1 && <span className="photo-count">{group.pages.length}장</span>}
+      {photos.map((photo, index) => <figure key={photo.id} className="photo-card">
+        <button type="button" className="photo-open" title="새 창에서 크게 보기" onClick={() => openImageViewer(items, index)}>
+          <img src={fileUrl(photo.id, true)} alt={photo.meta.caption || `${photo.meta.date} 사진`} loading="lazy" />
         </button>
         <figcaption>
-          <span><strong>{group.meta.caption || '설명 없음'}</strong><small>{group.meta.date}</small></span>
+          <span><strong>{photo.meta.caption || '설명 없음'}</strong><small>{photo.meta.date}</small></span>
           <span className="photo-actions">
-            <button type="button" title="설명 고치기·사진 더하기" aria-label="설명 고치기·사진 더하기" onClick={() => setEditing(group)}>✎</button>
-            <button type="button" title="삭제" aria-label="사진 삭제" onClick={() => remove(group)}>×</button>
+            <button type="button" title="설명 고치기" aria-label="설명 고치기" onClick={() => setEditing(photo)}>✎</button>
+            <button type="button" title="삭제" aria-label="사진 삭제" onClick={() => remove(photo)}>×</button>
           </span>
         </figcaption>
       </figure>)}
-      {groups.length === 0 && <p className="files-note">아직 사진이 없습니다. 사진 올리기를 누르거나 이곳에 끌어다 놓으세요.</p>}
+      {photos.length === 0 && <p className="files-note">아직 사진이 없습니다. 사진 올리기를 누르거나 이곳에 끌어다 놓으세요.</p>}
     </div>}
-    {editing && <PhotoGroupModal projectId={projectId} folder={folder} group={editing} store={store} onClose={() => setEditing(null)} />}
+    {editing && <PhotoModal photo={editing} store={store} onClose={() => setEditing(null)} />}
   </div>
 }
 
-function PhotoGroupModal({ projectId, folder, group, store, onClose }: { projectId: string; folder: string; group: FileGroup; store: ProjectFilesStore; onClose: () => void }) {
-  const [caption, setCaption] = useState(group.meta.caption ?? '')
-  const [date, setDate] = useState(group.meta.date ?? '')
-  const editor = useGroupEditor(store, projectId, folder, 'photo', group)
+function PhotoModal({ photo, store, onClose }: { photo: ProjectFile; store: ProjectFilesStore; onClose: () => void }) {
+  const [caption, setCaption] = useState(photo.meta.caption ?? '')
+  const [date, setDate] = useState(photo.meta.date ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const drop = (event: DragEvent) => { event.preventDefault(); event.stopPropagation(); editor.add(imageFiles(event.dataTransfer.files)) }
 
   async function save(event: FormEvent) {
     event.preventDefault()
-    if (!editor.pages.length) { setError('사진을 한 장 이상 남겨 주세요. 묶음을 통째로 지우려면 ×를 누르세요.'); return }
     setSaving(true)
     setError('')
     try {
-      await editor.save({ caption, date })
+      store.replaced(await updateProjectFile(photo.id, { ...photo.meta, caption, date }))
       onClose()
     } catch (failure) { setError(message(failure)) } finally { setSaving(false) }
   }
 
   return <div className="modal-backdrop" role="presentation">
-    <form className="modal-panel form-panel file-group-modal" onSubmit={save} onDragOver={event => { event.preventDefault(); event.stopPropagation() }} onDrop={drop}>
+    <form className="modal-panel form-panel file-group-modal" onSubmit={save}>
       <div className="modal-heading">
-        <div><h3>사진 묶음 수정</h3><span>설명과 날짜를 고치거나 사진을 더하고 뺄 수 있습니다.</span></div>
+        <div><h3>사진 설명 수정</h3><span>설명과 날짜를 고칠 수 있습니다.</span></div>
         <ModalClose onClose={onClose} disabled={saving} />
       </div>
-      <PageStrip editor={editor} disabled={saving} empty="여기에 사진을 붙여넣기(Ctrl+V)·끌어다 놓기·클릭해서 선택" />
+      <img className="photo-modal-picture" src={fileUrl(photo.id, true)} alt={photo.meta.caption || `${photo.meta.date} 사진`} />
       <div className="two-columns">
-        <label>설명<input value={caption} placeholder="설치 전, 배관 작업 등" onChange={event => setCaption(event.target.value)} /></label>
+        <label>설명<input value={caption} placeholder="설치 전, 배관 작업 등" autoFocus onChange={event => setCaption(event.target.value)} /></label>
         <label>날짜<input type="date" value={date} onChange={event => setDate(event.target.value)} /></label>
       </div>
       {error && <p className="files-note error">{error}</p>}
