@@ -35,7 +35,7 @@ export function expenseSheetHtml(title: string, rows: ExpenseSheetRow[]) {
       ...Array.from({ length: blanks }, () => `<tr>${columns.map(() => '<td></td>').join('')}</tr>`),
       ...(last ? [`<tr class="total"><td colspan="3" class="center">합계</td>${cell(money(total), 'num')}<td colspan="2"></td></tr>`] : []),
     ]
-    return `<section class="sheet"><h1><span class="fit">${escapeHtml(title)}</span></h1><table>${head}<tbody>${lines.join('')}</tbody></table><div class="page-number">${index + 1}/${pages.length}</div></section>`
+    return `<section class="sheet"><h1><span class="fit">${escapeHtml(title)}</span></h1><table>${head}<tbody>${lines.join('')}</tbody></table><div class="page-number">${index + 1}</div></section>`
   }).join('')
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
     /* A zero page margin leaves the browser no room for its date/title/URL header
