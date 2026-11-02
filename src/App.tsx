@@ -3431,7 +3431,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                     <span>이 공사의 발주 및 견적 현황</span>
                   </div>
                   <div className="table-wrap">
-                    <table>
+                    <table className="purchase-history-table">
                       <thead>
                         <tr>
                           <th>{renderPurchaseOrderSortButton('quoteDate', '견적의뢰일')}</th>

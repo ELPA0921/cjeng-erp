@@ -1599,6 +1599,11 @@ input:disabled {
   background: var(--accent-soft);
 }
 
+/* 견적의뢰일, 발주일, 완료일, 거래처, 담당자 sit in the middle of their columns. */
+.purchase-history-table tbody td:nth-child(-n+5) {
+  text-align: center;
+}
+
 /* 수주번호, 거래처, 날짜, 발주번호 sit in the middle of their columns. */
 .file-board :is(th, td):is(:nth-child(1), :nth-child(2), :nth-child(4), :nth-child(5)) {
   text-align: center;
