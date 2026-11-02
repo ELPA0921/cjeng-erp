@@ -19,6 +19,8 @@ import OutputMenu from './OutputMenu'
 import ExpenseSearch from './ExpenseSearch'
 import { emptyExpenseSearch } from './expenseSearchFilters'
 import { moveWithinDate, newestFirstOrder } from './expenseOrder'
+import { PhotoAlbum, PurchaseOrderBoard } from './ProjectFiles'
+import { useProjectFiles } from './useProjectFiles'
 import { syncEditedExpense, unlinkDeletedExpenses } from './cardAccounting'
 import type { Order, SharedOrderStore } from './orderTypes'
 import type { CardAccounting, Expense, WorkLog, SharedWorkspaceStore, WorkspaceData } from './workspaceTypes'
@@ -61,7 +63,7 @@ const tradeMenus = [
   ['orderContacts', '발주처'],
   ['deliveries', '납품실적'],
 ] as const
-type ProjectDetailTab = 'worklogs' | 'expenses' | 'purchases'
+type ProjectDetailTab = NavigationRoute['projectTab']
 type ContactTab = 'purchase' | 'order'
 type SortDirection = 'asc' | 'desc'
 type VendorSearchScope = 'all' | 'company' | 'contact' | 'item'
@@ -1052,6 +1054,10 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
 
       return purchaseOrderSort.direction === 'asc' ? result : -result
     })
+  // 발주서 and 사진대지 pictures load when a 공사 is opened.
+  const projectFiles = useProjectFiles(view === 'project' ? selectedProjectId : undefined, !!workspaceStore)
+  const purchaseOrderFileCount = projectFiles.files.filter(file => file.kind === 'purchaseOrder').length
+  const photoCount = projectFiles.files.filter(file => file.kind === 'photo').length
   const purchaseOrderTotal = filteredPurchaseOrders.reduce((sum, purchaseOrder) => sum + (purchaseOrder.amount ?? 0), 0)
   const activeProjects = projectSummaries
     .filter(project => project.status === '진행중')
@@ -3273,7 +3279,31 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                   발주내역
                   <span>{formatMoney(selectedProject.purchaseAmount)}</span>
                 </button>
+                <button
+                  className={projectDetailTab === 'purchaseOrders' ? 'active' : ''}
+                  type="button"
+                  onClick={() => setProjectDetailTab('purchaseOrders')}
+                >
+                  발주서
+                  <span>{projectFiles.loaded ? `${purchaseOrderFileCount}건` : ''}</span>
+                </button>
+                <button
+                  className={projectDetailTab === 'photos' ? 'active' : ''}
+                  type="button"
+                  onClick={() => setProjectDetailTab('photos')}
+                >
+                  사진대지
+                  <span>{projectFiles.loaded ? `${photoCount}장` : ''}</span>
+                </button>
               </div>
+
+              {projectDetailTab === 'purchaseOrders' && (
+                <PurchaseOrderBoard projectId={selectedProject.id} orderNo={selectedProject.orderNo} store={projectFiles} />
+              )}
+
+              {projectDetailTab === 'photos' && (
+                <PhotoAlbum projectId={selectedProject.id} projectName={selectedProject.projectName} store={projectFiles} />
+              )}
 
               {projectDetailTab === 'worklogs' && (
                 <>

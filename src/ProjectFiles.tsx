@@ -1,0 +1,199 @@
+import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react'
+import ModalClose from './ModalClose'
+import type { ProjectFilesStore } from './useProjectFiles'
+import { deleteProjectFile, fileDate, fileUrl, openImageViewer, prepareImage, updateProjectFile, uploadProjectFile, type FileKind, type ProjectFile } from './projectFileApi'
+
+const imageFiles = (list: FileList | DataTransferItemList | null | undefined) =>
+  [...(list ?? [])].map(item => item instanceof File ? item : item.kind === 'file' ? item.getAsFile() : null).filter((file): file is File => !!file && file.type.startsWith('image/'))
+const message = (error: unknown) => error instanceof Error ? error.message : '저장하지 못했습니다.'
+
+/** A picture pasted anywhere on the page is handed over; pasted text still goes to the text box. */
+function usePastedImages(onImages: (files: File[]) => void, enabled = true) {
+  const latest = useRef(onImages)
+  useEffect(() => { latest.current = onImages })
+  useEffect(() => {
+    if (!enabled) return
+    const onPaste = (event: ClipboardEvent) => {
+      const files = imageFiles(event.clipboardData?.items)
+      if (!files.length) return
+      event.preventDefault()
+      latest.current(files)
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [enabled])
+}
+
+function FilesUnavailable({ store }: { store: ProjectFilesStore }) {
+  if (!store.shared) return <p className="files-note">사진은 공유 저장소에 연결된 상태에서만 볼 수 있습니다.</p>
+  if (store.error) return <p className="files-note error">{store.error}</p>
+  if (!store.loaded) return <p className="files-note">불러오는 중…</p>
+  return null
+}
+
+type PurchaseOrderForm = { vendor: string; item: string; date: string; poNumber: string }
+const emptyForm: PurchaseOrderForm = { vendor: '', item: '', date: '', poNumber: '' }
+
+/**
+ * 발주서 게시판: one post per 발주서 with 수주번호, 거래처 (상호), 내용 (first item, "외" when
+ * there are more), 날짜 and 발주번호. Clicking a post opens its picture in a new window.
+ */
+export function PurchaseOrderBoard({ projectId, orderNo, store }: { projectId: string; orderNo: string; store: ProjectFilesStore }) {
+  const posts = store.files.filter(file => file.kind === 'purchaseOrder')
+    .sort((a, b) => (b.meta.date ?? '').localeCompare(a.meta.date ?? '') || (b.meta.poNumber ?? '').localeCompare(a.meta.poNumber ?? '') || b.createdAt.localeCompare(a.createdAt))
+  const [editing, setEditing] = useState<ProjectFile | 'new' | null>(null)
+  const viewerItems = posts.map(post => ({ id: post.id, title: [orderNo, post.meta.vendor, post.meta.item, post.meta.poNumber].filter(Boolean).join(' · '), name: [orderNo, post.meta.poNumber || post.meta.date, post.meta.vendor].filter(Boolean).join('_') || '발주서' }))
+  const remove = async (post: ProjectFile) => {
+    if (!window.confirm(`${post.meta.vendor || '이'} 발주서를 삭제할까요? 사진도 함께 지워집니다.`)) return
+    try { await deleteProjectFile(post.id); store.removed(post.id) } catch (error) { window.alert(message(error)) }
+  }
+
+  return <>
+    <div className="panel-heading">
+      <h3>발주서</h3>
+      <div className="files-heading-actions">
+        <span>클릭하면 새 창에서 발주서를 보고 내려받을 수 있습니다.</span>
+        {store.shared && store.loaded && !store.error && <button className="primary-button compact-button" type="button" onClick={() => setEditing('new')}>발주서 등록</button>}
+      </div>
+    </div>
+    <FilesUnavailable store={store} />
+    {store.loaded && !store.error && <div className="table-wrap">
+      <table className="file-board">
+        <thead><tr><th>수주번호</th><th>거래처</th><th>내용</th><th>날짜</th><th>발주번호</th><th aria-label="관리"></th></tr></thead>
+        <tbody>
+          {posts.map((post, index) => <tr key={post.id} tabIndex={0} title="새 창에서 발주서 보기" onClick={() => openImageViewer(viewerItems, index)}
+            onKeyDown={event => { if (event.key === 'Enter' && event.target === event.currentTarget) openImageViewer(viewerItems, index) }}>
+            <td>{orderNo}</td>
+            <td>{post.meta.vendor || '-'}</td>
+            <td className="file-board-title">{post.meta.item || '-'}</td>
+            <td className="date-cell">{post.meta.date || '-'}</td>
+            <td>{post.meta.poNumber || '-'}</td>
+            <td className="file-board-actions" onClick={event => event.stopPropagation()}>
+              <button className="ghost-button compact-button" type="button" onClick={() => setEditing(post)}>수정</button>
+              <button className="ghost-button compact-button danger" type="button" onClick={() => remove(post)}>삭제</button>
+            </td>
+          </tr>)}
+          {posts.length === 0 && <tr><td colSpan={6}>등록된 발주서가 없습니다.</td></tr>}
+        </tbody>
+      </table>
+    </div>}
+    {editing && <PurchaseOrderModal projectId={projectId} post={editing === 'new' ? null : editing} store={store} onClose={() => setEditing(null)} />}
+  </>
+}
+
+function PurchaseOrderModal({ projectId, post, store, onClose }: { projectId: string; post: ProjectFile | null; store: ProjectFilesStore; onClose: () => void }) {
+  const [form, setForm] = useState<PurchaseOrderForm>(post ? { ...emptyForm, ...post.meta } : emptyForm)
+  const [picture, setChosen] = useState<{ file: File; url: string } | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const setPicture = (file: File) => setChosen({ file, url: URL.createObjectURL(file) })
+  useEffect(() => () => { if (picture) URL.revokeObjectURL(picture.url) }, [picture])
+  const preview = picture?.url ?? ''
+  usePastedImages(files => setPicture(files[0]), !post)
+  const set = (patch: Partial<PurchaseOrderForm>) => setForm(current => ({ ...current, ...patch }))
+  const drop = (event: DragEvent) => { event.preventDefault(); const [file] = imageFiles(event.dataTransfer.files); if (file) setPicture(file) }
+
+  async function save(event: FormEvent) {
+    event.preventDefault()
+    if (!post && !picture) { setError('발주서 사진을 붙여넣거나 선택해 주세요.'); return }
+    setSaving(true)
+    setError('')
+    try {
+      const meta = { vendor: form.vendor, item: form.item, date: form.date, poNumber: form.poNumber }
+      if (post) store.replaced(await updateProjectFile(post.id, { ...post.meta, ...meta }))
+      else store.added(await uploadProjectFile(projectId, 'purchaseOrder', { ...meta, fileName: picture!.file.name }, await prepareImage(picture!.file)))
+      onClose()
+    } catch (failure) { setError(message(failure)) } finally { setSaving(false) }
+  }
+
+  return <div className="modal-backdrop" role="presentation">
+    <form className="modal-panel form-panel purchase-order-modal" onSubmit={save}>
+      <div className="modal-heading">
+        <div><h3>{post ? '발주서 수정' : '발주서 등록'}</h3><span>{post ? '게시판에 보이는 내용을 고칩니다.' : '캡처한 발주서를 Ctrl+V로 붙여넣거나 끌어다 놓으세요.'}</span></div>
+        <ModalClose onClose={onClose} disabled={saving} />
+      </div>
+      {!post && <label className={`file-drop${preview ? ' has-picture' : ''}`} onDragOver={event => event.preventDefault()} onDrop={drop}>
+        {preview ? <img src={preview} alt="붙여넣은 발주서" /> : <span>여기에 발주서 사진을 붙여넣기(Ctrl+V)·끌어다 놓기·클릭해서 선택</span>}
+        <input type="file" accept="image/*" onChange={event => { const [file] = imageFiles(event.target.files); if (file) setPicture(file); event.target.value = '' }} />
+      </label>}
+      <div className="two-columns">
+        <label>거래처<input value={form.vendor} placeholder="상호(법인명)" onChange={event => set({ vendor: event.target.value })} /></label>
+        <label>발주번호<input value={form.poNumber} placeholder="CJE-2502071" onChange={event => set({ poNumber: event.target.value })} /></label>
+        <label>내용<input value={form.item} placeholder="1번 품목 (2개 이상이면 '외')" onChange={event => set({ item: event.target.value })} /></label>
+        <label>날짜<input type="date" value={form.date} onChange={event => set({ date: event.target.value })} /></label>
+      </div>
+      {error && <p className="files-note error">{error}</p>}
+      <div className="modal-actions">
+        <button className="ghost-button" type="button" disabled={saving} onClick={onClose}>취소</button>
+        <button className="primary-button" type="submit" disabled={saving}>{saving ? '저장 중…' : '저장'}</button>
+      </div>
+    </form>
+  </div>
+}
+
+/** 사진대지: the 공사's photos as an album. Several can be added at once by choosing, dropping or pasting. */
+export function PhotoAlbum({ projectId, projectName, store }: { projectId: string; projectName: string; store: ProjectFilesStore }) {
+  const photos = store.files.filter(file => file.kind === 'photo')
+    .sort((a, b) => (a.meta.date ?? '').localeCompare(b.meta.date ?? '') || a.createdAt.localeCompare(b.createdAt))
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+  const [error, setError] = useState('')
+  const [dragging, setDragging] = useState(false)
+  const ready = store.shared && store.loaded && !store.error
+  const viewerItems = photos.map((photo, index) => ({ id: photo.id, title: [projectName, photo.meta.caption || photo.meta.date].filter(Boolean).join(' · '), name: [projectName, photo.meta.date, photo.meta.caption || String(index + 1)].filter(Boolean).join('_') }))
+
+  async function upload(files: File[]) {
+    if (!ready || progress || !files.length) return
+    setError('')
+    const failed: string[] = []
+    for (const [index, file] of files.entries()) {
+      setProgress({ done: index, total: files.length })
+      try { store.added(await uploadProjectFile(projectId, 'photo' satisfies FileKind, { caption: '', date: fileDate(file), fileName: file.name }, await prepareImage(file))) }
+      catch (failure) { failed.push(`${file.name}: ${message(failure)}`) }
+    }
+    setProgress(null)
+    if (failed.length) setError(`${failed.length}장을 올리지 못했습니다. ${failed.join(' / ')}`)
+  }
+  usePastedImages(upload, ready)
+  const caption = async (photo: ProjectFile) => {
+    const next = window.prompt('사진 설명', photo.meta.caption ?? '')
+    if (next === null) return
+    try { store.replaced(await updateProjectFile(photo.id, { ...photo.meta, caption: next })) } catch (failure) { window.alert(message(failure)) }
+  }
+  const remove = async (photo: ProjectFile) => {
+    if (!window.confirm('이 사진을 삭제할까요?')) return
+    try { await deleteProjectFile(photo.id); store.removed(photo.id) } catch (failure) { window.alert(message(failure)) }
+  }
+
+  return <div className={`photo-album${dragging ? ' dragging' : ''}`}
+    onDragOver={event => { if (!ready) return; event.preventDefault(); setDragging(true) }}
+    onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false) }}
+    onDrop={event => { event.preventDefault(); setDragging(false); upload(imageFiles(event.dataTransfer.files)) }}>
+    <div className="panel-heading">
+      <h3>사진대지</h3>
+      <div className="files-heading-actions">
+        <span>{progress ? `${progress.done + 1} / ${progress.total}장 올리는 중…` : '사진을 끌어다 놓거나 Ctrl+V로 붙여넣을 수 있습니다.'}</span>
+        {ready && <label className={`primary-button compact-button file-picker${progress ? ' disabled' : ''}`}>
+          사진 올리기
+          <input type="file" accept="image/*" multiple disabled={!!progress} onChange={event => { const files = imageFiles(event.target.files); event.target.value = ''; upload(files) }} />
+        </label>}
+      </div>
+    </div>
+    <FilesUnavailable store={store} />
+    {error && <p className="files-note error">{error}</p>}
+    {ready && <div className="photo-grid">
+      {photos.map((photo, index) => <figure key={photo.id} className="photo-card">
+        <button type="button" className="photo-open" title="새 창에서 크게 보기" onClick={() => openImageViewer(viewerItems, index)}>
+          <img src={fileUrl(photo.id, true)} alt={photo.meta.caption || `${photo.meta.date} 사진`} loading="lazy" />
+        </button>
+        <figcaption>
+          <span><strong>{photo.meta.caption || '설명 없음'}</strong><small>{photo.meta.date}</small></span>
+          <span className="photo-actions">
+            <button type="button" title="설명 고치기" aria-label="설명 고치기" onClick={() => caption(photo)}>✎</button>
+            <button type="button" title="삭제" aria-label="사진 삭제" onClick={() => remove(photo)}>×</button>
+          </span>
+        </figcaption>
+      </figure>)}
+      {photos.length === 0 && <p className="files-note">아직 사진이 없습니다. 사진 올리기를 누르거나 이곳에 끌어다 놓으세요.</p>}
+    </div>}
+  </div>
+}

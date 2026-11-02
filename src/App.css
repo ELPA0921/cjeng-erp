@@ -1528,7 +1528,7 @@ input:disabled {
 
 .detail-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px;
   margin-bottom: 20px;
   padding: 6px;
@@ -1563,6 +1563,200 @@ input:disabled {
   color: #0b806f;
   font-size: 12px;
   white-space: nowrap;
+}
+
+/* 발주서 board and 사진대지 album */
+.files-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.files-heading-actions span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.files-note {
+  margin: 12px 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.files-note.error {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.file-board tbody tr {
+  cursor: pointer;
+}
+
+.file-board tbody tr:hover td,
+.file-board tbody tr:focus-visible td {
+  background: var(--accent-soft);
+}
+
+.file-board-title {
+  font-weight: 700;
+}
+
+.file-board-actions {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.file-board-actions .compact-button {
+  min-height: 32px;
+  margin-left: 6px;
+  padding: 0 10px;
+}
+
+.compact-button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.purchase-order-modal {
+  display: grid;
+  gap: 14px;
+  width: min(760px, 100%);
+}
+
+.file-drop {
+  position: relative;
+  display: grid !important;
+  place-items: center;
+  min-height: 180px;
+  border: 2px dashed var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  cursor: pointer;
+  padding: 12px;
+  text-align: center;
+}
+
+.file-drop.has-picture {
+  border-style: solid;
+}
+
+.file-drop img {
+  max-width: 100%;
+  max-height: 46vh;
+}
+
+.file-drop input,
+.file-picker input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.file-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.file-picker.disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.photo-album {
+  border-radius: 8px;
+}
+
+.photo-album.dragging {
+  outline: 2px dashed var(--accent);
+  outline-offset: 6px;
+}
+
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.photo-grid > .files-note {
+  grid-column: 1 / -1;
+}
+
+.photo-card {
+  display: grid;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.photo-open {
+  display: block;
+  aspect-ratio: 4 / 3;
+  border: 0;
+  background: var(--surface-muted);
+  cursor: zoom-in;
+  padding: 0;
+}
+
+.photo-open img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.photo-card figcaption {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+}
+
+.photo-card figcaption > span:first-child {
+  display: grid;
+  min-width: 0;
+}
+
+.photo-card strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-card small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.photo-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.photo-actions button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.photo-actions button:last-child:hover {
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .year-switch,
@@ -1810,9 +2004,12 @@ tbody tr.selected-row:hover td {
 
   .project-hero dl,
   .project-metrics,
-  .detail-tabs,
   .contact-tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .detail-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .panel.wide {
