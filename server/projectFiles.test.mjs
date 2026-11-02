@@ -21,7 +21,7 @@ test('a 발주서 picture is stored, listed, read back, edited and deleted', asy
   await ensureFileSchema(sql)
   await ensureFileSchema(sql)
   const file = await insertFile(sql, 'f1', validateUpload(upload({ thumb: jpeg.toString('base64') })), 'staff@cjeng.kr')
-  assert.deepEqual(file.meta, { vendor: '연일철강', item: '흑각관 외', date: '2025-02-07', poNumber: 'CJE-2502071', fileName: '' })
+  assert.deepEqual(file.meta, { vendor: '연일철강', item: '흑각관 외', date: '2025-02-07', poNumber: 'CJE-2502071', fileName: '', group: '' })
   assert.equal(file.size, png.length)
   await insertFile(sql, 'f2', validateUpload(upload({ kind: 'photo', projectId: 'shared-2025-25002', meta: { caption: '설치 전' } })), 'staff@cjeng.kr')
   assert.deepEqual((await listFiles(sql, 'shared-2025-25001')).map(row => row.id), ['f1'])

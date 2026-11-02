@@ -33,19 +33,37 @@ function FilesUnavailable({ store }: { store: ProjectFilesStore }) {
 
 type PurchaseOrderForm = { vendor: string; item: string; date: string; poNumber: string }
 const emptyForm: PurchaseOrderForm = { vendor: '', item: '', date: '', poNumber: '' }
+type PurchaseOrderPost = { key: string; pages: ProjectFile[]; meta: Record<string, string> }
+
+// Pages of one 발주서 share meta.group; a 발주서 saved before pages existed has none and goes by its own id.
+const postKey = (file: ProjectFile) => file.meta.group || file.id
+const postPages = (files: ProjectFile[], key: string) =>
+  files.filter(file => file.kind === 'purchaseOrder' && postKey(file) === key).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
 
 /**
  * 발주서 게시판: one post per 발주서 with 수주번호, 거래처 (상호), 내용 (first item, "외" when
- * there are more), 날짜 and 발주번호. Clicking a post opens its picture in a new window.
+ * there are more), 날짜 and 발주번호. A 발주서 may have several pages. Clicking a post opens its
+ * pages in a new window.
  */
 export function PurchaseOrderBoard({ projectId, orderNo, store }: { projectId: string; orderNo: string; store: ProjectFilesStore }) {
-  const posts = store.files.filter(file => file.kind === 'purchaseOrder')
-    .sort((a, b) => (b.meta.date ?? '').localeCompare(a.meta.date ?? '') || (b.meta.poNumber ?? '').localeCompare(a.meta.poNumber ?? '') || b.createdAt.localeCompare(a.createdAt))
-  const [editing, setEditing] = useState<ProjectFile | 'new' | null>(null)
-  const viewerItems = posts.map(post => ({ id: post.id, title: [orderNo, post.meta.vendor, post.meta.item, post.meta.poNumber].filter(Boolean).join(' · '), name: [orderNo, post.meta.poNumber || post.meta.date, post.meta.vendor].filter(Boolean).join('_') || '발주서' }))
-  const remove = async (post: ProjectFile) => {
-    if (!window.confirm(`${post.meta.vendor || '이'} 발주서를 삭제할까요? 사진도 함께 지워집니다.`)) return
-    try { await deleteProjectFile(post.id); store.removed(post.id) } catch (error) { window.alert(message(error)) }
+  const posts: PurchaseOrderPost[] = [...new Set(store.files.filter(file => file.kind === 'purchaseOrder').map(postKey))]
+    .map(key => { const pages = postPages(store.files, key); return { key, pages, meta: pages[0].meta } })
+    .sort((a, b) => (b.meta.date ?? '').localeCompare(a.meta.date ?? '') || (b.meta.poNumber ?? '').localeCompare(a.meta.poNumber ?? '') || b.pages[0].createdAt.localeCompare(a.pages[0].createdAt))
+  const [editing, setEditing] = useState<PurchaseOrderPost | 'new' | null>(null)
+  const viewerItems = posts.flatMap(({ meta, pages }) => pages.map((page, index) => {
+    const pageNo = pages.length > 1 ? index + 1 : 0
+    return {
+      id: page.id,
+      title: [orderNo, meta.vendor, meta.item, meta.poNumber].filter(Boolean).join(' · ') + (pageNo ? ` (${pageNo}/${pages.length}장)` : ''),
+      name: [orderNo, meta.poNumber || meta.date, meta.vendor, pageNo ? String(pageNo) : ''].filter(Boolean).join('_') || '발주서',
+    }
+  }))
+  const firstPage = (post: PurchaseOrderPost) => viewerItems.findIndex(item => item.id === post.pages[0].id)
+  const remove = async (post: PurchaseOrderPost) => {
+    if (!window.confirm(`${post.meta.vendor || '이'} 발주서를 삭제할까요? 사진${post.pages.length > 1 ? ` ${post.pages.length}장` : ''}도 함께 지워집니다.`)) return
+    try {
+      for (const page of post.pages) { await deleteProjectFile(page.id); store.removed(page.id) }
+    } catch (error) { window.alert(message(error)) }
   }
 
   return <>
@@ -61,11 +79,11 @@ export function PurchaseOrderBoard({ projectId, orderNo, store }: { projectId: s
       <table className="file-board">
         <thead><tr><th>수주번호</th><th>거래처</th><th>내용</th><th>날짜</th><th>발주번호</th><th aria-label="관리"></th></tr></thead>
         <tbody>
-          {posts.map((post, index) => <tr key={post.id} tabIndex={0} title="새 창에서 발주서 보기" onClick={() => openImageViewer(viewerItems, index)}
-            onKeyDown={event => { if (event.key === 'Enter' && event.target === event.currentTarget) openImageViewer(viewerItems, index) }}>
+          {posts.map(post => <tr key={post.key} tabIndex={0} title="새 창에서 발주서 보기" onClick={() => openImageViewer(viewerItems, firstPage(post))}
+            onKeyDown={event => { if (event.key === 'Enter' && event.target === event.currentTarget) openImageViewer(viewerItems, firstPage(post)) }}>
             <td>{orderNo}</td>
             <td>{post.meta.vendor || '-'}</td>
-            <td className="file-board-title">{post.meta.item || '-'}</td>
+            <td className="file-board-title">{post.meta.item || '-'}{post.pages.length > 1 && <span className="page-count">{post.pages.length}장</span>}</td>
             <td className="date-cell">{post.meta.date || '-'}</td>
             <td>{post.meta.poNumber || '-'}</td>
             <td className="file-board-actions" onClick={event => event.stopPropagation()}>
@@ -81,41 +99,78 @@ export function PurchaseOrderBoard({ projectId, orderNo, store }: { projectId: s
   </>
 }
 
-function PurchaseOrderModal({ projectId, post, store, onClose }: { projectId: string; post: ProjectFile | null; store: ProjectFilesStore; onClose: () => void }) {
+/**
+ * Registers or edits one 발주서. Pages are pasted, dropped or chosen in order; when editing,
+ * pages can be added or taken away as well.
+ */
+function PurchaseOrderModal({ projectId, post, store, onClose }: { projectId: string; post: PurchaseOrderPost | null; store: ProjectFilesStore; onClose: () => void }) {
   const [form, setForm] = useState<PurchaseOrderForm>(post ? { ...emptyForm, ...post.meta } : emptyForm)
-  const [picture, setChosen] = useState<{ file: File; url: string } | null>(null)
+  const [group] = useState(() => post?.key ?? crypto.randomUUID())
+  const [pictures, setPictures] = useState<{ file: File; url: string }[]>([])
+  const [removing, setRemoving] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const setPicture = (file: File) => setChosen({ file, url: URL.createObjectURL(file) })
-  useEffect(() => () => { if (picture) URL.revokeObjectURL(picture.url) }, [picture])
-  const preview = picture?.url ?? ''
-  usePastedImages(files => setPicture(files[0]), !post)
+  const urls = useRef<string[]>([])
+  useEffect(() => { const made = urls.current; return () => made.forEach(url => URL.revokeObjectURL(url)) }, [])
+  const addPictures = (files: File[]) => {
+    const added = files.map(file => ({ file, url: URL.createObjectURL(file) }))
+    urls.current.push(...added.map(picture => picture.url))
+    setPictures(current => [...current, ...added])
+  }
+  usePastedImages(addPictures)
+  // Saved pages come from the store, so a retry after a half-finished save neither repeats nor loses one.
+  const saved = postPages(store.files, group).filter(page => !removing.includes(page.id))
+  const pages = [
+    ...saved.map(page => ({ key: page.id, src: fileUrl(page.id, true), remove: () => setRemoving(current => [...current, page.id]) })),
+    ...pictures.map(picture => ({ key: picture.url, src: picture.url, remove: () => setPictures(current => current.filter(item => item !== picture)) })),
+  ]
   const set = (patch: Partial<PurchaseOrderForm>) => setForm(current => ({ ...current, ...patch }))
-  const drop = (event: DragEvent) => { event.preventDefault(); const [file] = imageFiles(event.dataTransfer.files); if (file) setPicture(file) }
+  const drop = (event: DragEvent) => { event.preventDefault(); addPictures(imageFiles(event.dataTransfer.files)) }
+  const picker = <input type="file" accept="image/*" multiple onChange={event => { const files = imageFiles(event.target.files); event.target.value = ''; addPictures(files) }} />
 
   async function save(event: FormEvent) {
     event.preventDefault()
-    if (!post && !picture) { setError('발주서 사진을 붙여넣거나 선택해 주세요.'); return }
+    if (!pages.length) { setError('발주서 사진을 한 장 이상 붙여넣거나 선택해 주세요.'); return }
     setSaving(true)
     setError('')
     try {
       const meta = { vendor: form.vendor, item: form.item, date: form.date, poNumber: form.poNumber }
-      if (post) store.replaced(await updateProjectFile(post.id, { ...post.meta, ...meta }))
-      else store.added(await uploadProjectFile(projectId, 'purchaseOrder', { ...meta, fileName: picture!.file.name }, await prepareImage(picture!.file)))
+      for (const page of saved) {
+        if (Object.entries(meta).some(([field, value]) => page.meta[field] !== value)) store.replaced(await updateProjectFile(page.id, { ...page.meta, ...meta }))
+      }
+      for (const picture of pictures) {
+        store.added(await uploadProjectFile(projectId, 'purchaseOrder', { ...meta, group, fileName: picture.file.name }, await prepareImage(picture.file)))
+        setPictures(current => current.filter(item => item !== picture))
+      }
+      for (const id of removing) {
+        if (store.files.some(file => file.id === id)) await deleteProjectFile(id)
+        store.removed(id)
+      }
       onClose()
     } catch (failure) { setError(message(failure)) } finally { setSaving(false) }
   }
 
   return <div className="modal-backdrop" role="presentation">
-    <form className="modal-panel form-panel purchase-order-modal" onSubmit={save}>
+    <form className="modal-panel form-panel purchase-order-modal" onSubmit={save} onDragOver={event => event.preventDefault()} onDrop={drop}>
       <div className="modal-heading">
-        <div><h3>{post ? '발주서 수정' : '발주서 등록'}</h3><span>{post ? '게시판에 보이는 내용을 고칩니다.' : '캡처한 발주서를 Ctrl+V로 붙여넣거나 끌어다 놓으세요.'}</span></div>
+        <div><h3>{post ? '발주서 수정' : '발주서 등록'}</h3><span>{post ? '내용을 고치거나 장을 더하고 뺄 수 있습니다.' : '캡처한 발주서를 Ctrl+V로 붙여넣거나 끌어다 놓으세요. 여러 장이면 차례대로 넣으세요.'}</span></div>
         <ModalClose onClose={onClose} disabled={saving} />
       </div>
-      {!post && <label className={`file-drop${preview ? ' has-picture' : ''}`} onDragOver={event => event.preventDefault()} onDrop={drop}>
-        {preview ? <img src={preview} alt="붙여넣은 발주서" /> : <span>여기에 발주서 사진을 붙여넣기(Ctrl+V)·끌어다 놓기·클릭해서 선택</span>}
-        <input type="file" accept="image/*" onChange={event => { const [file] = imageFiles(event.target.files); if (file) setPicture(file); event.target.value = '' }} />
-      </label>}
+      {pages.length === 0
+        ? <label className="file-drop">
+          <span>여기에 발주서 사진을 붙여넣기(Ctrl+V)·끌어다 놓기·클릭해서 선택 (여러 장 가능)</span>
+          {picker}
+        </label>
+        : <div className="page-strip">
+          {pages.map((page, index) => <figure key={page.key}>
+            <img src={page.src} alt={`발주서 ${index + 1}장`} />
+            <figcaption>{index + 1}장<button type="button" title="이 장 빼기" aria-label={`${index + 1}장 빼기`} disabled={saving} onClick={page.remove}>×</button></figcaption>
+          </figure>)}
+          <label className="file-drop page-add">
+            <span>+ 장 추가<small>붙여넣기·끌어다 놓기·선택</small></span>
+            {picker}
+          </label>
+        </div>}
       <div className="two-columns">
         <label>거래처<input value={form.vendor} placeholder="상호(법인명)" onChange={event => set({ vendor: event.target.value })} /></label>
         <label>발주번호<input value={form.poNumber} placeholder="CJE-2502071" onChange={event => set({ poNumber: event.target.value })} /></label>
