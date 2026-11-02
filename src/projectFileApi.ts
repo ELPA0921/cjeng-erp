@@ -73,7 +73,7 @@ export function fileDate(file: File) {
 export type ViewerItem = { id: string; title: string; name: string }
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!)
 
-/** Opens pictures in a new window, one at a time, with 다운로드 and ‹ › (or the arrow keys) to move between them. */
+/** Opens pictures in a new window, one at a time, with 다운로드, ‹ › (or the arrow keys) to move between them and ✕ (or Esc) to close. */
 export function openImageViewer(items: ViewerItem[], start: number) {
   const viewer = window.open('', '_blank')
   if (!viewer) return
@@ -88,10 +88,11 @@ export function openImageViewer(items: ViewerItem[], start: number) {
     header span { color: #9fb3c8; font-size: 13px; }
     a, button { min-height: 36px; border: 1px solid #486581; border-radius: 6px; background: #243b53; color: #f5f7fa; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 7px 14px; text-decoration: none; }
     a.download { border-color: #0b806f; background: #0b806f; }
+    button.close { min-width: 36px; padding: 7px 10px; font-size: 16px; line-height: 1; }
     button:disabled { cursor: default; opacity: 0.4; }
     main { display: grid; place-items: center; overflow: auto; padding: 12px; }
     img { max-width: 100%; max-height: calc(100vh - 80px); background: #fff; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); }
-  </style></head><body><header><strong id="title"></strong><span id="count"></span><button id="prev" type="button">‹ 이전</button><button id="next" type="button">다음 ›</button><a id="download" class="download">다운로드</a></header><main><img id="picture" alt=""></main><script>
+  </style></head><body><header><strong id="title"></strong><span id="count"></span><button id="prev" type="button">‹ 이전</button><button id="next" type="button">다음 ›</button><a id="download" class="download">다운로드</a><button id="close" class="close" type="button" aria-label="닫기" title="닫기 (Esc)">✕</button></header><main><img id="picture" alt=""></main><script>
     var pictures = ${JSON.stringify(pictures).replace(/</g, '\\u003c')}, index = ${start}
     function show(next) {
       index = Math.max(0, Math.min(pictures.length - 1, next))
@@ -108,7 +109,8 @@ export function openImageViewer(items: ViewerItem[], start: number) {
     }
     document.getElementById('prev').onclick = function () { show(index - 1) }
     document.getElementById('next').onclick = function () { show(index + 1) }
-    document.addEventListener('keydown', function (event) { if (event.key === 'ArrowLeft') show(index - 1); if (event.key === 'ArrowRight') show(index + 1) })
+    document.getElementById('close').onclick = function () { window.close() }
+    document.addEventListener('keydown', function (event) { if (event.key === 'ArrowLeft') show(index - 1); if (event.key === 'ArrowRight') show(index + 1); if (event.key === 'Escape') window.close() })
     show(index)
   </script></body></html>`)
   viewer.document.close()
