@@ -33,25 +33,33 @@ const base64 = (blob: Blob) => new Promise<string>((resolve, reject) => {
   reader.readAsDataURL(blob)
 })
 
-function jpeg(bitmap: ImageBitmap, edge: number, quality: number) {
-  const scale = Math.min(1, edge / Math.max(bitmap.width, bitmap.height))
+/**
+ * Draws the picture as JPEG with its longer side at most edge px. Framed, it instead sits whole in the
+ * middle of a landscape 4:3 frame at most edge × ¾edge, with white filling the sides of upright shots.
+ */
+function jpeg(bitmap: ImageBitmap, edge: number, quality: number, framed = false) {
+  const scale = Math.min(1, framed ? Math.min(edge / bitmap.width, edge * 3 / 4 / bitmap.height) : edge / Math.max(bitmap.width, bitmap.height))
+  const width = Math.max(1, Math.round(bitmap.width * scale))
+  const height = Math.max(1, Math.round(bitmap.height * scale))
   const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, Math.round(bitmap.width * scale))
-  canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+  canvas.width = framed ? Math.max(width, Math.round(height * 4 / 3)) : width
+  canvas.height = framed ? Math.max(height, Math.round(width * 3 / 4)) : height
   const context = canvas.getContext('2d')!
   // Transparent captures would turn black as JPEG.
   context.fillStyle = '#ffffff'
   context.fillRect(0, 0, canvas.width, canvas.height)
-  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  context.drawImage(bitmap, Math.round((canvas.width - width) / 2), Math.round((canvas.height - height) / 2), width, height)
   return new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('사진을 줄이지 못했습니다.')), 'image/jpeg', quality))
 }
+
+const decode = (file: Blob) => createImageBitmap(file).catch(() => { throw new Error('JPG, PNG, WebP 사진만 올릴 수 있습니다.') })
 
 /**
  * Readies a picture for upload: small enough captures keep their original file so 발주서 text stays
  * sharp; bigger photos are scaled to 2400px JPEG. A 480px preview goes along for lists and albums.
  */
 export async function prepareImage(file: Blob): Promise<PreparedImage> {
-  const bitmap = await createImageBitmap(file).catch(() => { throw new Error('JPG, PNG, WebP 사진만 올릴 수 있습니다.') })
+  const bitmap = await decode(file)
   try {
     let picture: Blob = file
     if (!keepAsIs.includes(file.type) || file.size > maxBytes || Math.max(bitmap.width, bitmap.height) > maxEdge) {
@@ -60,6 +68,19 @@ export async function prepareImage(file: Blob): Promise<PreparedImage> {
       if (picture.size > maxBytes) throw new Error('사진이 너무 큽니다.')
     }
     return { contentType: picture.type, data: await base64(picture), thumb: await base64(await jpeg(bitmap, 480, 0.8)) }
+  } finally {
+    bitmap.close()
+  }
+}
+
+/**
+ * Readies a 사진대지 photo: every one becomes the same landscape 4:3 JPEG, 1600×1200 at most (about
+ * 0.3MB), so the album and its printouts line up. Upright shots keep all of the picture, with white beside it.
+ */
+export async function preparePhoto(file: Blob): Promise<PreparedImage> {
+  const bitmap = await decode(file)
+  try {
+    return { contentType: 'image/jpeg', data: await base64(await jpeg(bitmap, 1600, 0.85, true)), thumb: await base64(await jpeg(bitmap, 480, 0.8, true)) }
   } finally {
     bitmap.close()
   }

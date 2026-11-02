@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react'
 import ModalClose from './ModalClose'
 import type { ProjectFilesStore } from './useProjectFiles'
-import { deleteProjectFile, fileDate, fileUrl, openImageViewer, prepareImage, updateProjectFile, uploadProjectFile, type FileKind, type ProjectFile } from './projectFileApi'
+import { deleteProjectFile, fileDate, fileUrl, openImageViewer, prepareImage, preparePhoto, updateProjectFile, uploadProjectFile, type FileKind, type ProjectFile } from './projectFileApi'
 
 const imageFiles = (list: FileList | DataTransferItemList | null | undefined) =>
   [...(list ?? [])].map(item => item instanceof File ? item : item.kind === 'file' ? item.getAsFile() : null).filter((file): file is File => !!file && file.type.startsWith('image/'))
@@ -88,7 +88,7 @@ function useGroupEditor(store: ProjectFilesStore, projectId: string, kind: FileK
       if (changed.some(([field, value]) => page.meta[field] !== value)) store.replaced(await updateProjectFile(page.id, { ...page.meta, ...Object.fromEntries(changed) }))
     }
     for (const picture of pictures) {
-      store.added(await uploadProjectFile(projectId, kind, { ...meta, group: key, fileName: picture.file.name }, await prepareImage(picture.file)))
+      store.added(await uploadProjectFile(projectId, kind, { ...meta, group: key, fileName: picture.file.name }, await (kind === 'photo' ? preparePhoto : prepareImage)(picture.file)))
       setPictures(current => current.filter(item => item !== picture))
     }
     for (const id of removing) {
@@ -234,7 +234,7 @@ export function PhotoAlbum({ projectId, projectName, store }: { projectId: strin
     const group = crypto.randomUUID()
     for (const [index, file] of files.entries()) {
       setProgress({ done: index, total: files.length })
-      try { store.added(await uploadProjectFile(projectId, 'photo', { caption: '', date: fileDate(file), fileName: file.name, group }, await prepareImage(file))) }
+      try { store.added(await uploadProjectFile(projectId, 'photo', { caption: '', date: fileDate(file), fileName: file.name, group }, await preparePhoto(file))) }
       catch (failure) { failed.push(`${file.name}: ${message(failure)}`) }
     }
     setProgress(null)
