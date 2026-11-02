@@ -934,7 +934,6 @@ function Icon({ name }: { name: IconName }) {
 function App() {
   const [view, setView] = useState<View>('home')
   const [viewHistory, setViewHistory] = useState<View[]>([])
-  const [viewFuture, setViewFuture] = useState<View[]>([])
   const [orderYear, setOrderYear] = useState(currentYear)
   const [orders, setOrders] = useState(() =>
     loadStoredData('cost-app-orders', defaultOrders),
@@ -1094,30 +1093,11 @@ function App() {
     if (nextView === view) return
 
     setViewHistory((current) => [...current, view])
-    setViewFuture([])
     setView(nextView)
   }
 
-  const goBack = () => {
-    setViewHistory((current) => {
-      const previousView = current.at(-1)
-      if (!previousView) return current
-
-      setViewFuture((future) => [view, ...future])
-      setView(previousView)
-      return current.slice(0, -1)
-    })
-  }
-
-  const goForward = () => {
-    setViewFuture((current) => {
-      const nextView = current[0]
-      if (!nextView) return current
-
-      setViewHistory((history) => [...history, view])
-      setView(nextView)
-      return current.slice(1)
-    })
+  const goToList = () => {
+    navigateTo(viewHistory.findLast((item) => item !== 'project') ?? 'orders')
   }
 
   const projectSummaries = useMemo(
@@ -2494,26 +2474,6 @@ function App() {
 
       <section className="workspace">
         <header className="topbar">
-          <div className="history-actions" aria-label="화면 이동">
-            <button
-              aria-label="뒤로가기"
-              disabled={viewHistory.length === 0}
-              title="뒤로가기"
-              type="button"
-              onClick={goBack}
-            >
-              ←
-            </button>
-            <button
-              aria-label="앞으로가기"
-              disabled={viewFuture.length === 0}
-              title="앞으로가기"
-              type="button"
-              onClick={goForward}
-            >
-              →
-            </button>
-          </div>
           <div>
             <p className="eyebrow">
               {view === 'home'
@@ -2599,6 +2559,11 @@ function App() {
               </>
             )}
           </div>
+          {view === 'project' && (
+            <button className="list-button" type="button" onClick={goToList}>
+              목록
+            </button>
+          )}
         </header>
 
         {view === 'home' && (
