@@ -87,3 +87,33 @@ test('two clients cannot overwrite each other; a failed or invalid write is neve
   assert.equal(unavailable.statusCode, 503)
   assert.equal(data.orders[0].status, '보류')
 })
+
+test('a saved 수주대장 brings the 공사 folders along, and a drive problem never fails the save', async () => {
+  let data = { orders: [order], revision: 0 }
+  const calls = []
+  let driveDown = false
+  const drive = {
+    async arrange(year, name) { if (driveDown) throw new Error('drive down'); calls.push(['arrange', year, name]) },
+    async relocate() {},
+    async remove(folder) { calls.push(['remove', folder.name]) },
+  }
+  const deps = { settings, sameOrigin, readSession: async () => ({ email: 'allowed@example.test' }), readOrders: async () => structuredClone(data), drive: () => drive,
+    writeOrders: async (orders, revision) => revision === data.revision ? structuredClone(data = { orders, revision: revision + 1 }) : null }
+  const handler = createOrdersHandler(deps)
+  const added = { ...order, id: 'id-2', orderNo: '23002', projectName: '신규 공사' }
+  const saved = response()
+  await handler(request({ orders: [order, added], revision: 0 }), saved)
+  assert.equal(saved.statusCode, 200)
+  assert.deepEqual(calls, [['arrange', '2023', '23002 신규 공사']])
+  // A write that lost to another staff member leaves the folders alone.
+  await handler(request({ orders: [order], revision: 0 }), response())
+  assert.equal(calls.length, 1)
+  const removed = response()
+  await handler(request({ orders: [added], revision: 1 }), removed)
+  assert.deepEqual(calls.at(-1), ['remove', '23001 테스트 공사'])
+  driveDown = true
+  const stillSaved = response()
+  await handler(request({ orders: [added, order], revision: 2 }), stillSaved)
+  assert.equal(stillSaved.statusCode, 200)
+  assert.equal(data.orders.length, 2)
+})

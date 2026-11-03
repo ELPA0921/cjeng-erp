@@ -30,6 +30,43 @@ export const driveName = (name: string) => [...name].map(char => char < ' ' || '
 
 /** Each year's 공사 folders sit in a folder such as "2026년". */
 export const yearFolder = (year: string) => `${year}년`
+/** A 공사's folder: its year and a name such as "24012 집진시스템 개선 공사". */
+export type ProjectFolder = { year: string; name: string }
+
+let shared: Drive | null | undefined
+/** The shared drive client, made once per function instance; null until the drive settings are in place. */
+export function sharedDrive() {
+  if (shared === undefined) { const config = driveConfig(); shared = config ? createDrive(config) : null }
+  return shared
+}
+
+/**
+ * Keeps the 공사 folders in step with 수주대장 after it is saved: a new 공사 gets its folder even
+ * before any picture, one whose year or name changed has its folder follow, and a deleted 공사's
+ * folder goes to the trash. 관리비 (order numbers such as 26000) has no folder.
+ */
+export async function syncOrderFolders(drive: Pick<Drive, 'arrange' | 'relocate' | 'remove'>, before: Record<string, string>[], after: Record<string, string>[]) {
+  const folderOf = (order: Record<string, string>): ProjectFolder | null =>
+    /^\d{2}000$/.test(order.orderNo?.trim() ?? '') || !/^\d{4}$/.test(order.year ?? '') ? null
+      : { year: order.year, name: [order.orderNo?.trim(), order.projectName?.trim()].filter(Boolean).join(' ') }
+  const old = new Map(before.map(order => [order.id, folderOf(order)]))
+  const kept = new Set(after.map(order => order.id))
+  const changes: (() => Promise<unknown>)[] = []
+  for (const order of after) {
+    const now = folderOf(order)
+    const was = old.get(order.id)
+    if (!now) continue
+    if (!was) changes.push(() => drive.arrange(now.year, now.name))
+    else if (was.year !== now.year || was.name !== now.name) changes.push(() => drive.relocate(was, now))
+  }
+  for (const [id, was] of old) if (was && !kept.has(id)) changes.push(() => drive.remove(was))
+  // A big import is left to the admin's folder arranging rather than holding up the save.
+  if (changes.length > maxFolderChanges) return { done: 0, failed: 0, skipped: changes.length }
+  let failed = 0
+  for (const change of changes) await change().catch(() => { failed++ })
+  return { done: changes.length - failed, failed, skipped: 0 }
+}
+const maxFolderChanges = 20
 
 export function createDrive(config: DriveConfig, fetchImpl: Fetch = fetch) {
   let token: { value: string; expires: number } | null = null
@@ -89,6 +126,28 @@ export function createDrive(config: DriveConfig, fetchImpl: Fetch = fetch) {
     return parent
   }
 
+  /** Moves a file or folder from one parent to another, renaming it when a name is given. */
+  async function move(id: string, from: string, to: string, name?: string) {
+    const query = new URLSearchParams({ supportsAllDrives: 'true', fields: 'id', ...from === to ? {} : { addParents: to, removeParents: from } })
+    await call(`${api}/${encodeURIComponent(id)}?${query}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(name ? { name } : {}) })
+  }
+
+  /**
+   * Puts a 공사's folder in its year's folder: one left from before years were used is moved
+   * there with everything in it, and an empty one is made when the 공사 has none yet.
+   */
+  async function arrange(year: string, name: string): Promise<'kept' | 'moved' | 'made'> {
+    const yearId = await folderPath([yearFolder(year)])
+    const folderName = driveName(name) || '기타'
+    if (await find(yearId, folderName)) return 'kept'
+    const loose = await find(config.rootId, folderName)
+    if (!loose) { await folder(yearId, folderName); return 'made' }
+    await move(loose, config.rootId, yearId)
+    folders.delete(`${config.rootId}/${folderName}`)
+    folders.set(`${yearId}/${folderName}`, Promise.resolve(loose))
+    return 'moved'
+  }
+
   return {
     /** Saves a picture as path/name (folders made as needed) and returns its Drive file id. */
     async upload(path: string[], name: string, contentType: string, data: Buffer) {
@@ -104,24 +163,31 @@ export function createDrive(config: DriveConfig, fetchImpl: Fetch = fetch) {
       })
       return (await response.json() as { id: string }).id
     },
-    /**
-     * Puts a 공사's folder in its year's folder: one left from before years were used is moved
-     * there with everything in it, and an empty one is made when the 공사 has none yet.
-     */
-    async arrange(year: string, name: string): Promise<'kept' | 'moved' | 'made'> {
-      const yearId = await folderPath([yearFolder(year)])
-      const folderName = driveName(name) || '기타'
-      if (await find(yearId, folderName)) return 'kept'
-      const loose = await find(config.rootId, folderName)
-      if (!loose) { await folder(yearId, folderName); return 'made' }
-      await call(`${api}/${encodeURIComponent(loose)}?${new URLSearchParams({ addParents: yearId, removeParents: config.rootId, supportsAllDrives: 'true', fields: 'id' })}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-      folders.delete(`${config.rootId}/${folderName}`)
-      folders.set(`${yearId}/${folderName}`, Promise.resolve(loose))
+    arrange,
+    /** Follows a 공사 whose year or name changed: its folder is moved and renamed, with everything in it. */
+    async relocate(from: ProjectFolder, to: ProjectFolder) {
+      const fromYear = await find(config.rootId, yearFolder(from.year))
+      const fromName = driveName(from.name) || '기타'
+      const id = fromYear && await find(fromYear, fromName)
+      if (!id) return arrange(to.year, to.name)
+      const toYear = await folderPath([yearFolder(to.year)])
+      const toName = driveName(to.name) || '기타'
+      // A folder already there by the new name is left as it is, next to the old one.
+      if (await find(toYear, toName)) return 'kept'
+      await move(id, fromYear, toYear, toName)
+      folders.delete(`${fromYear}/${fromName}`)
+      folders.set(`${toYear}/${toName}`, Promise.resolve(id))
       return 'moved'
     },
-    /** Renames the folder the ERP keeps its pictures in. */
-    async renameRoot(name: string) {
-      await call(`${api}/${encodeURIComponent(config.rootId)}?supportsAllDrives=true&fields=id`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: driveName(name) }) })
+    /** Sends a deleted 공사's folder to the shared drive's trash, where it can be restored for 30 days. */
+    async remove(folder: ProjectFolder) {
+      const yearId = await find(config.rootId, yearFolder(folder.year))
+      const name = driveName(folder.name) || '기타'
+      const id = yearId && await find(yearId, name)
+      if (!id) return false
+      await call(`${api}/${encodeURIComponent(id)}?supportsAllDrives=true&fields=id`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trashed: true }) })
+      folders.delete(`${yearId}/${name}`)
+      return true
     },
     /** The picture's bytes, or null when it is gone from the drive. */
     async download(id: string) {

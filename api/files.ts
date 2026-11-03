@@ -2,18 +2,12 @@ import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { readSession, sameOrigin, settings } from '../server/security.ts'
 import { workspaceSql } from '../server/workspaceDb.ts'
-import { createDrive, driveConfig, DriveError, yearFolder, type Drive } from '../server/googleDrive.ts'
+import { DriveError, sharedDrive, yearFolder } from '../server/googleDrive.ts'
 import { deleteFile, ensureFileSchema, FileInputError, insertFile, kindFolder, listFiles, listUnmoved, markMoved, pictureName, readFile, updateFileMeta, validateUpload } from '../server/projectFiles.ts'
 
 // The table is created on first use, once per function instance.
 let schema: Promise<void> | null = null
 const fileStore = { sql: () => workspaceSql(settings().databaseUrl), ensureFileSchema, listFiles, readFile, insertFile, updateFileMeta, deleteFile, listUnmoved, markMoved }
-let sharedDrive: Drive | null | undefined
-// Originals go to the shared drive once its settings are in place; until then they stay in the database.
-const drive = () => {
-  if (sharedDrive === undefined) { const config = driveConfig(); sharedDrive = config ? createDrive(config) : null }
-  return sharedDrive
-}
 const downloadName = (name: string, contentType: string) => {
   const base = [...name].map(char => char < ' ' || '\\/:*?"<>|'.includes(char) ? '_' : char).join('').trim().slice(0, 120) || 'photo'
   return `${base}.${contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : 'jpg'}`
@@ -28,10 +22,11 @@ const arrangeBatch = 25
  * &download=1&name= to save it). POST uploads, PATCH { id, meta } edits the 발주서 or caption
  * details, DELETE ?id= removes it. POST { action: 'moveToDrive', folders } lets an admin move
  * pictures still kept in the database to the shared drive, a few at a time. POST { action:
- * 'arrangeDrive', folders: [{ year, folder }], rootName? } lets an admin put 공사 folders in their
+ * 'arrangeDrive', folders: [{ year, folder }] } lets an admin put 공사 folders in their
  * year's folder, making empty ones for 공사 without pictures yet.
  */
-export function createFilesHandler(deps = { readSession, sameOrigin, settings, fileStore, drive }) {
+// Originals go to the shared drive once its settings are in place; until then they stay in the database.
+export function createFilesHandler(deps = { readSession, sameOrigin, settings, fileStore, drive: sharedDrive }) {
   return async function handler(req: IncomingMessage & { body?: unknown }, res: ServerResponse) {
     res.setHeader('X-Content-Type-Options', 'nosniff')
     const json = (status: number, body: unknown) => {
@@ -113,14 +108,13 @@ export function createFilesHandler(deps = { readSession, sameOrigin, settings, f
         if (!shared) { json(503, { error: '구글 드라이브 연결 설정이 필요합니다.' }); return }
         const list = Array.isArray(body.folders) ? body.folders as { year?: unknown; folder?: unknown }[] : []
         if (list.length > arrangeBatch || list.some(item => !/^\d{4}$/.test(String(item?.year)) || typeof item?.folder !== 'string' || !item.folder.trim() || item.folder.length > 200)) throw new FileInputError('폴더 목록을 확인해 주세요.')
-        if (typeof body.rootName === 'string' && body.rootName.trim()) await shared.renameRoot(body.rootName.trim())
         const done = { kept: 0, moved: 0, made: 0 }
         for (const item of list) done[await shared.arrange(String(item.year), String(item.folder))]++
         json(200, done); return
       }
       const upload = validateUpload(body)
       const shared = deps.drive()
-      const driveId = shared ? await shared.upload([...upload.year ? [yearFolder(upload.year)] : [], upload.folder || upload.projectId, kindFolder(upload.kind)],pictureName(upload.kind, upload.meta, upload.contentType), upload.contentType, upload.data) : null
+      const driveId = shared ? await shared.upload([...upload.year ? [yearFolder(upload.year)] : [], upload.folder || upload.projectId, kindFolder(upload.kind)], pictureName(upload.kind, upload.meta, upload.contentType), upload.contentType, upload.data) : null
       try {
         json(200, { file: await deps.fileStore.insertFile(sql, randomUUID(), upload, user.email, driveId) })
       } catch (error) {

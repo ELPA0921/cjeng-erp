@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { PGlite } from '@electric-sql/pglite'
 import { generateKeyPairSync } from 'node:crypto'
-import { createDrive, driveConfig } from './googleDrive.ts'
+import { createDrive, driveConfig, syncOrderFolders } from './googleDrive.ts'
 import { deleteFile, ensureFileSchema, insertFile, listFiles, listUnmoved, markMoved, pictureName, readFile, updateFileMeta, validateUpload } from './projectFiles.ts'
 
 // Same stand-in for the Neon driver as workspaceDb.test.mjs: tagged templates become parameterized queries.
@@ -166,13 +166,13 @@ test('공사 folders go into their year folder: older ones are moved, missing on
     if (pathname === '/token') return reply({ access_token: 'token', expires_in: 3600 })
     if (pathname === '/drive/v3/files' && !init.method) {
       const [, name, parent] = /^name = '(.*)' and '(.*)' in parents/.exec(searchParams.get('q'))
-      return reply({ files: [...folders].filter(([, f]) => f.name === name && f.parent === parent).map(([id]) => ({ id })) })
+      return reply({ files: [...folders].filter(([, f]) => f.name === name && f.parent === parent && !f.trashed).map(([id]) => ({ id })) })
     }
     if (pathname === '/drive/v3/files') { const { name, parents } = JSON.parse(init.body); const id = `f${folders.size}`; folders.set(id, { name, parent: parents[0] }); return reply({ id }) }
     if (pathname.startsWith('/upload/')) return reply({ id: 'picture' })
     const id = decodeURIComponent(pathname.split('/').pop())
     if (searchParams.get('addParents')) { assert.equal(searchParams.get('removeParents'), folders.get(id).parent); folders.get(id).parent = searchParams.get('addParents') }
-    else folders.get(id).name = JSON.parse(init.body).name
+    Object.assign(folders.get(id), JSON.parse(init.body))
     return reply({ id })
   })
   const folders = new Map([['root', { name: 'ERP 사진', parent: 'drive' }], ['old', { name: '23019 집진기 공사', parent: 'root' }]])
@@ -188,16 +188,20 @@ test('공사 folders go into their year folder: older ones are moved, missing on
   await drive.upload(['2023년', '23019 집진기 공사', '사진대지'], '사진.jpg', 'image/jpeg', jpeg)
   assert.equal(where('사진대지').parent, '23019 집진기 공사')
   assert.equal(folders.size, before + 1)
-  await drive.renameRoot('창조이엔지 ERP')
-  assert.equal(folders.get('root').name, '창조이엔지 ERP')
+  // A 공사 renamed into another year takes its folder along; a deleted one's folder goes to the trash.
+  assert.equal(await drive.relocate({ year: '2023', name: '23019 집진기 공사' }, { year: '2024', name: '24001 집진기 개선 공사' }), 'moved')
+  assert.deepEqual(where('24001 집진기 개선 공사'), { id: 'old', parent: '2024년' })
+  assert.equal(await drive.relocate({ year: '2025', name: '25009 없는 공사' }, { year: '2025', name: '25009 새 공사' }), 'made')
+  assert.equal(await drive.remove({ year: '2024', name: '24001 집진기 개선 공사' }), true)
+  assert.equal(folders.get('old').trashed, true)
+  assert.equal(await drive.remove({ year: '2022', name: '22001 예전 공사' }), false)
 })
 
 test('only an admin arranges the drive folders, with a checked list', async () => {
   const { createFilesHandler } = await import('../api/files.ts')
   const origin = 'https://erp.example.test'
   const arranged = []
-  let renamed = null
-  const drive = { ...memoryDrive(), async arrange(year, folder) { arranged.push([year, folder]); return arranged.length === 1 ? 'moved' : 'made' }, async renameRoot(name) { renamed = name } }
+  const drive = { ...memoryDrive(), async arrange(year, folder) { arranged.push([year, folder]); return arranged.length === 1 ? 'moved' : 'made' } }
   let role = 'staff'
   const fileStore = { sql: () => () => Promise.resolve([]), ensureFileSchema: async () => {} }
   const handler = createFilesHandler({ readSession: async () => ({ email: 'staff@cjeng.kr', role }), sameOrigin: () => true, settings: () => ({ storage: 'postgres', origin }), fileStore, drive: () => drive })
@@ -211,7 +215,25 @@ test('only an admin arranges the drive folders, with a checked list', async () =
   role = 'admin'
   assert.equal((await call({ action: 'arrangeDrive', folders: [{ year: '23', folder: '23019' }] })).statusCode, 400)
   assert.equal((await call({ action: 'arrangeDrive', folders: Array(26).fill(folders[0]) })).statusCode, 400)
-  assert.deepEqual(JSON.parse((await call({ action: 'arrangeDrive', folders, rootName: '창조이엔지 ERP' })).body), { kept: 0, moved: 1, made: 1 })
+  assert.deepEqual(JSON.parse((await call({ action: 'arrangeDrive', folders })).body), { kept: 0, moved: 1, made: 1 })
   assert.deepEqual(arranged, [['2023', '23019 집진기 공사'], ['2026', '26001 신규 공사']])
-  assert.equal(renamed, '창조이엔지 ERP')
+})
+
+test('saving 수주대장 makes, follows and trashes the 공사 folders', async () => {
+  const calls = []
+  const drive = {
+    async arrange(year, name) { calls.push(['arrange', year, name]); return 'made' },
+    async relocate(from, to) { calls.push(['relocate', from.name, to.year + '/' + to.name]); return 'moved' },
+    async remove(folder) { calls.push(['remove', folder.year + '/' + folder.name]); if (folder.name.startsWith('26003')) throw new Error('drive down'); return true },
+  }
+  const order = (id, year, orderNo, projectName) => ({ id, year, orderNo, projectName })
+  const before = [order('a', '2026', '26001', '배관 공사'), order('b', '2026', '26002', '덕트 공사'), order('c', '2026', '26003', '철거 공사'), order('m', '2026', '26000', '관리비')]
+  const after = [order('a', '2026', '26001', '배관 공사'), order('b', '2026', '26002', '덕트 교체 공사'), order('d', '2026', '26004', ' 신규 공사 '), order('n', '2027', '27000', '관리비')]
+  assert.deepEqual(await syncOrderFolders(drive, before, after), { done: 2, failed: 1, skipped: 0 })
+  assert.deepEqual(calls, [['relocate', '26002 덕트 공사', '2026/26002 덕트 교체 공사'], ['arrange', '2026', '26004 신규 공사'], ['remove', '2026/26003 철거 공사']])
+  // A large import is left for the admin to arrange instead of holding up the save.
+  calls.length = 0
+  const many = Array.from({ length: 21 }, (_, i) => order('x' + i, '2026', String(26100 + i), '공사'))
+  assert.deepEqual(await syncOrderFolders(drive, [], many), { done: 0, failed: 0, skipped: 21 })
+  assert.equal(calls.length, 0)
 })
