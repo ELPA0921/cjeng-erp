@@ -28,6 +28,9 @@ export function driveConfig(env: Record<string, string | undefined> = process.en
 /** Drive folder and file names cannot hold path characters; keep them short and readable. */
 export const driveName = (name: string) => [...name].map(char => char < ' ' || '\\/:*?"<>|'.includes(char) ? '_' : char).join('').trim().slice(0, 120)
 
+/** Each year's 공사 folders sit in a folder such as "2026년". */
+export const yearFolder = (year: string) => `${year}년`
+
 export function createDrive(config: DriveConfig, fetchImpl: Fetch = fetch) {
   let token: { value: string; expires: number } | null = null
   const folders = new Map<string, Promise<string>>()
@@ -56,16 +59,21 @@ export function createDrive(config: DriveConfig, fetchImpl: Fetch = fetch) {
     return response
   }
 
+  /** The id of the folder of this name directly under parent, if there is one. */
+  async function find(parent: string, name: string) {
+    const q = `name = '${name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}' and '${parent}' in parents and mimeType = '${folderType}' and trashed = false`
+    const list = await call(`${api}?${new URLSearchParams({ q, fields: 'files(id)', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true', corpora: 'allDrives' })}`)
+    return (await list.json() as { files: { id: string }[] }).files[0]?.id ?? null
+  }
+
   /** The folder of this name under parent, made when it is not there yet. */
   function folder(parent: string, name: string) {
     const key = `${parent}/${name}`
     let found = folders.get(key)
     if (!found) {
       found = (async () => {
-        const q = `name = '${name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}' and '${parent}' in parents and mimeType = '${folderType}' and trashed = false`
-        const list = await call(`${api}?${new URLSearchParams({ q, fields: 'files(id)', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true', corpora: 'allDrives' })}`)
-        const [existing] = (await list.json() as { files: { id: string }[] }).files
-        if (existing) return existing.id
+        const existing = await find(parent, name)
+        if (existing) return existing
         const made = await call(`${api}?supportsAllDrives=true&fields=id`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, mimeType: folderType, parents: [parent] }) })
         return (await made.json() as { id: string }).id
       })()
@@ -75,11 +83,16 @@ export function createDrive(config: DriveConfig, fetchImpl: Fetch = fetch) {
     return found
   }
 
+  async function folderPath(path: string[]) {
+    let parent = config.rootId
+    for (const part of path) parent = await folder(parent, driveName(part) || '기타')
+    return parent
+  }
+
   return {
     /** Saves a picture as path/name (folders made as needed) and returns its Drive file id. */
     async upload(path: string[], name: string, contentType: string, data: Buffer) {
-      let parent = config.rootId
-      for (const part of path) parent = await folder(parent, driveName(part) || '기타')
+      const parent = await folderPath(path)
       const boundary = `cjeng${Date.now().toString(36)}`
       const body = Buffer.concat([
         Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name: driveName(name) || 'photo', parents: [parent] })}\r\n--${boundary}\r\nContent-Type: ${contentType}\r\n\r\n`),
@@ -90,6 +103,25 @@ export function createDrive(config: DriveConfig, fetchImpl: Fetch = fetch) {
         method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body,
       })
       return (await response.json() as { id: string }).id
+    },
+    /**
+     * Puts a 공사's folder in its year's folder: one left from before years were used is moved
+     * there with everything in it, and an empty one is made when the 공사 has none yet.
+     */
+    async arrange(year: string, name: string): Promise<'kept' | 'moved' | 'made'> {
+      const yearId = await folderPath([yearFolder(year)])
+      const folderName = driveName(name) || '기타'
+      if (await find(yearId, folderName)) return 'kept'
+      const loose = await find(config.rootId, folderName)
+      if (!loose) { await folder(yearId, folderName); return 'made' }
+      await call(`${api}/${encodeURIComponent(loose)}?${new URLSearchParams({ addParents: yearId, removeParents: config.rootId, supportsAllDrives: 'true', fields: 'id' })}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      folders.delete(`${config.rootId}/${folderName}`)
+      folders.set(`${yearId}/${folderName}`, Promise.resolve(loose))
+      return 'moved'
+    },
+    /** Renames the folder the ERP keeps its pictures in. */
+    async renameRoot(name: string) {
+      await call(`${api}/${encodeURIComponent(config.rootId)}?supportsAllDrives=true&fields=id`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: driveName(name) }) })
     },
     /** The picture's bytes, or null when it is gone from the drive. */
     async download(id: string) {

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { readSession, sameOrigin, settings } from '../server/security.ts'
 import { workspaceSql } from '../server/workspaceDb.ts'
-import { createDrive, driveConfig, DriveError, type Drive } from '../server/googleDrive.ts'
+import { createDrive, driveConfig, DriveError, yearFolder, type Drive } from '../server/googleDrive.ts'
 import { deleteFile, ensureFileSchema, FileInputError, insertFile, kindFolder, listFiles, listUnmoved, markMoved, pictureName, readFile, updateFileMeta, validateUpload } from '../server/projectFiles.ts'
 
 // The table is created on first use, once per function instance.
@@ -20,12 +20,16 @@ const downloadName = (name: string, contentType: string) => {
 }
 // Pictures moved per call, small enough to finish well inside a function's time limit.
 const moveBatch = 10
+// 공사 folders put in their year's folder per call.
+const arrangeBatch = 25
 
 /**
  * GET ?projectId= lists a 공사's pictures; GET ?id= sends one (&thumb=1 for its preview,
  * &download=1&name= to save it). POST uploads, PATCH { id, meta } edits the 발주서 or caption
  * details, DELETE ?id= removes it. POST { action: 'moveToDrive', folders } lets an admin move
- * pictures still kept in the database to the shared drive, a few at a time.
+ * pictures still kept in the database to the shared drive, a few at a time. POST { action:
+ * 'arrangeDrive', folders: [{ year, folder }], rootName? } lets an admin put 공사 folders in their
+ * year's folder, making empty ones for 공사 without pictures yet.
  */
 export function createFilesHandler(deps = { readSession, sameOrigin, settings, fileStore, drive }) {
   return async function handler(req: IncomingMessage & { body?: unknown }, res: ServerResponse) {
@@ -103,9 +107,20 @@ export function createFilesHandler(deps = { readSession, sameOrigin, settings, f
         }
         json(200, { moved: files.length, left: left - files.length }); return
       }
+      if (body?.action === 'arrangeDrive') {
+        if (user.role !== 'admin') { json(403, { error: '관리자만 폴더를 정리할 수 있습니다.' }); return }
+        const shared = deps.drive()
+        if (!shared) { json(503, { error: '구글 드라이브 연결 설정이 필요합니다.' }); return }
+        const list = Array.isArray(body.folders) ? body.folders as { year?: unknown; folder?: unknown }[] : []
+        if (list.length > arrangeBatch || list.some(item => !/^\d{4}$/.test(String(item?.year)) || typeof item?.folder !== 'string' || !item.folder.trim() || item.folder.length > 200)) throw new FileInputError('폴더 목록을 확인해 주세요.')
+        if (typeof body.rootName === 'string' && body.rootName.trim()) await shared.renameRoot(body.rootName.trim())
+        const done = { kept: 0, moved: 0, made: 0 }
+        for (const item of list) done[await shared.arrange(String(item.year), String(item.folder))]++
+        json(200, done); return
+      }
       const upload = validateUpload(body)
       const shared = deps.drive()
-      const driveId = shared ? await shared.upload([upload.folder || upload.projectId, kindFolder(upload.kind)], pictureName(upload.kind, upload.meta, upload.contentType), upload.contentType, upload.data) : null
+      const driveId = shared ? await shared.upload([...upload.year ? [yearFolder(upload.year)] : [], upload.folder || upload.projectId, kindFolder(upload.kind)],pictureName(upload.kind, upload.meta, upload.contentType), upload.contentType, upload.data) : null
       try {
         json(200, { file: await deps.fileStore.insertFile(sql, randomUUID(), upload, user.email, driveId) })
       } catch (error) {

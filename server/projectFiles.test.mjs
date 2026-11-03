@@ -103,9 +103,9 @@ test('with a shared drive, originals go to the 공사 folder and only previews s
   await ensureFileSchema(sql)
   await insertFile(sql, 'old', validateUpload(upload({ projectId: 'shared-2024-24012', meta: { vendor: '태진', poNumber: 'CJE-1', fileName: '24012-01.png' } })), 'staff@cjeng.kr')
 
-  const created = JSON.parse((await call('POST', '/api/files', upload({ folder: '25001 신규 공사', thumb: jpeg.toString('base64'), meta: { vendor: '연일철강', poNumber: 'CJE-2502071', fileName: 'image.png' } }))).body).file
+  const created = JSON.parse((await call('POST', '/api/files', upload({ folder: '25001 신규 공사', year: '2025', thumb: jpeg.toString('base64'), meta: { vendor: '연일철강', poNumber: 'CJE-2502071', fileName: 'image.png' } }))).body).file
   const [stored] = drive.files.values()
-  assert.deepEqual([stored.path, stored.name, stored.data], [['25001 신규 공사', '발주서'], 'CJE-2502071_연일철강_image.png', png])
+  assert.deepEqual([stored.path, stored.name, stored.data], [['2025년', '25001 신규 공사', '발주서'], 'CJE-2502071_연일철강_image.png', png])
   assert.deepEqual(await readFile(sql, created.id, false), { contentType: 'image/png', data: null, driveId: 'd1' })
   assert.deepEqual((await call('GET', '/api/files?id=' + created.id)).body, png)
   assert.deepEqual((await call('GET', '/api/files?thumb=1&id=' + created.id)).body, jpeg)
@@ -155,4 +155,63 @@ test('the drive client signs in as the service account, makes folders once and u
   await drive.trash('gone')
   // One sign-in, the two folders looked up (one made) once, then two uploads.
   assert.deepEqual(requests, ['POST /token', 'GET /drive/v3/files', 'POST /drive/v3/files', 'GET /drive/v3/files', 'POST /upload/drive/v3/files', 'POST /upload/drive/v3/files', 'GET /drive/v3/files/file-1', 'PATCH /drive/v3/files/gone'])
+})
+
+test('공사 folders go into their year folder: older ones are moved, missing ones are made empty', async () => {
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+  const key = JSON.stringify({ client_email: 'erp@cjeng.iam.gserviceaccount.com', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }) })
+  const drive = createDrive(driveConfig({ GOOGLE_DRIVE_SERVICE_ACCOUNT: key, GOOGLE_DRIVE_FOLDER_ID: 'root' }), async (url, init = {}) => {
+    const { pathname, searchParams } = new URL(url)
+    const reply = body => new Response(JSON.stringify(body), { status: 200 })
+    if (pathname === '/token') return reply({ access_token: 'token', expires_in: 3600 })
+    if (pathname === '/drive/v3/files' && !init.method) {
+      const [, name, parent] = /^name = '(.*)' and '(.*)' in parents/.exec(searchParams.get('q'))
+      return reply({ files: [...folders].filter(([, f]) => f.name === name && f.parent === parent).map(([id]) => ({ id })) })
+    }
+    if (pathname === '/drive/v3/files') { const { name, parents } = JSON.parse(init.body); const id = `f${folders.size}`; folders.set(id, { name, parent: parents[0] }); return reply({ id }) }
+    if (pathname.startsWith('/upload/')) return reply({ id: 'picture' })
+    const id = decodeURIComponent(pathname.split('/').pop())
+    if (searchParams.get('addParents')) { assert.equal(searchParams.get('removeParents'), folders.get(id).parent); folders.get(id).parent = searchParams.get('addParents') }
+    else folders.get(id).name = JSON.parse(init.body).name
+    return reply({ id })
+  })
+  const folders = new Map([['root', { name: 'ERP 사진', parent: 'drive' }], ['old', { name: '23019 집진기 공사', parent: 'root' }]])
+  const where = name => { const [id, f] = [...folders].find(([, f]) => f.name === name); return { id, parent: folders.get(f.parent)?.name ?? f.parent } }
+
+  assert.equal(await drive.arrange('2023', '23019 집진기 공사'), 'moved')
+  assert.deepEqual(where('23019 집진기 공사'), { id: 'old', parent: '2023년' })
+  assert.equal(await drive.arrange('2023', '23019 집진기 공사'), 'kept')
+  assert.equal(await drive.arrange('2026', '26001 신규/공사'), 'made')
+  assert.equal(where('26001 신규_공사').parent, '2026년')
+  // New pictures land in the moved folder, not a fresh one at the top.
+  const before = folders.size
+  await drive.upload(['2023년', '23019 집진기 공사', '사진대지'], '사진.jpg', 'image/jpeg', jpeg)
+  assert.equal(where('사진대지').parent, '23019 집진기 공사')
+  assert.equal(folders.size, before + 1)
+  await drive.renameRoot('창조이엔지 ERP')
+  assert.equal(folders.get('root').name, '창조이엔지 ERP')
+})
+
+test('only an admin arranges the drive folders, with a checked list', async () => {
+  const { createFilesHandler } = await import('../api/files.ts')
+  const origin = 'https://erp.example.test'
+  const arranged = []
+  let renamed = null
+  const drive = { ...memoryDrive(), async arrange(year, folder) { arranged.push([year, folder]); return arranged.length === 1 ? 'moved' : 'made' }, async renameRoot(name) { renamed = name } }
+  let role = 'staff'
+  const fileStore = { sql: () => () => Promise.resolve([]), ensureFileSchema: async () => {} }
+  const handler = createFilesHandler({ readSession: async () => ({ email: 'staff@cjeng.kr', role }), sameOrigin: () => true, settings: () => ({ storage: 'postgres', origin }), fileStore, drive: () => drive })
+  const call = async body => {
+    const res = { statusCode: 200, headers: {}, setHeader(key, value) { this.headers[key] = value }, end(value) { this.body = value } }
+    await handler({ method: 'POST', url: '/api/files', headers: { origin }, body }, res)
+    return res
+  }
+  const folders = [{ year: '2023', folder: '23019 집진기 공사' }, { year: '2026', folder: '26001 신규 공사' }]
+  assert.equal((await call({ action: 'arrangeDrive', folders })).statusCode, 403)
+  role = 'admin'
+  assert.equal((await call({ action: 'arrangeDrive', folders: [{ year: '23', folder: '23019' }] })).statusCode, 400)
+  assert.equal((await call({ action: 'arrangeDrive', folders: Array(26).fill(folders[0]) })).statusCode, 400)
+  assert.deepEqual(JSON.parse((await call({ action: 'arrangeDrive', folders, rootName: '창조이엔지 ERP' })).body), { kept: 0, moved: 1, made: 1 })
+  assert.deepEqual(arranged, [['2023', '23019 집진기 공사'], ['2026', '26001 신규 공사']])
+  assert.equal(renamed, '창조이엔지 ERP')
 })

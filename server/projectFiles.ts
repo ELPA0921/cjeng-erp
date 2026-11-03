@@ -63,6 +63,8 @@ export function validateUpload(value: unknown) {
     projectId: text(input.projectId, 200, true),
     // The 공사's folder name in the shared drive, such as "24012 집진시스템 개선 공사".
     folder: text(input.folder, 200),
+    // Its year, whose folder holds the 공사's folder; left out, the 공사's folder sits at the top.
+    year: /^\d{4}$/.test(String(input.year ?? '')) ? String(input.year) : '',
     kind,
     meta: validateMeta(kind, input.meta ?? {}),
     contentType,

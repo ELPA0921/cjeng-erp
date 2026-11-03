@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react'
 import ModalClose from './ModalClose'
 import type { ProjectFilesStore } from './useProjectFiles'
-import { deleteProjectFile, fileDate, fileUrl, openImageViewer, prepareImage, preparePhoto, updateProjectFile, uploadProjectFile, type FileKind, type ProjectFile } from './projectFileApi'
+import { deleteProjectFile, fileDate, fileUrl, openImageViewer, prepareImage, preparePhoto, updateProjectFile, uploadProjectFile, type DriveFolder, type FileKind, type ProjectFile } from './projectFileApi'
 
 const imageFiles = (list: FileList | DataTransferItemList | null | undefined) =>
   [...(list ?? [])].map(item => item instanceof File ? item : item.kind === 'file' ? item.getAsFile() : null).filter((file): file is File => !!file && file.type.startsWith('image/'))
@@ -63,7 +63,7 @@ async function deleteGroup(store: ProjectFilesStore, group: FileGroup) {
  * The pictures of one group while its form is open. Saved ones come from the store, so a retry after
  * a half-finished save neither repeats nor loses one; new ones wait here until saved.
  */
-function useGroupEditor(store: ProjectFilesStore, projectId: string, folder: string, kind: FileKind, group: FileGroup | null) {
+function useGroupEditor(store: ProjectFilesStore, projectId: string, folder: DriveFolder, kind: FileKind, group: FileGroup | null) {
   const [key] = useState(() => group?.key ?? crypto.randomUUID())
   const [pictures, setPictures] = useState<{ file: File; url: string }[]>([])
   const [removing, setRemoving] = useState<string[]>([])
@@ -123,8 +123,8 @@ const emptyForm: PurchaseOrderForm = { vendor: '', item: '', date: '', poNumber:
  * there are more), 날짜 and 발주번호. A 발주서 may have several pages. Clicking a post opens its
  * pages in a new window.
  */
-/** folder names the 공사's folder in the shared drive, such as "24012 집진시스템 개선 공사". */
-export function PurchaseOrderBoard({ projectId, orderNo, folder, store }: { projectId: string; orderNo: string; folder: string; store: ProjectFilesStore }) {
+/** folder names the 공사's folder in the shared drive, such as "24012 집진시스템 개선 공사" in "2024년". */
+export function PurchaseOrderBoard({ projectId, orderNo, folder, store }: { projectId: string; orderNo: string; folder: DriveFolder; store: ProjectFilesStore }) {
   const posts = fileGroups(store.files, 'purchaseOrder')
     .sort((a, b) => (b.meta.date ?? '').localeCompare(a.meta.date ?? '') || (b.meta.poNumber ?? '').localeCompare(a.meta.poNumber ?? '') || b.pages[0].createdAt.localeCompare(a.pages[0].createdAt))
   const [editing, setEditing] = useState<FileGroup | 'new' | null>(null)
@@ -172,7 +172,7 @@ export function PurchaseOrderBoard({ projectId, orderNo, folder, store }: { proj
  * Registers or edits one 발주서. Pages are pasted, dropped or chosen in order; when editing,
  * pages can be added or taken away as well.
  */
-function PurchaseOrderModal({ projectId, folder, post, store, onClose }: { projectId: string; folder: string; post: FileGroup | null; store: ProjectFilesStore; onClose: () => void }) {
+function PurchaseOrderModal({ projectId, folder, post, store, onClose }: { projectId: string; folder: DriveFolder; post: FileGroup | null; store: ProjectFilesStore; onClose: () => void }) {
   const [form, setForm] = useState<PurchaseOrderForm>(post ? { ...emptyForm, ...post.meta } : emptyForm)
   const editor = useGroupEditor(store, projectId, folder, 'purchaseOrder', post)
   const [saving, setSaving] = useState(false)
@@ -217,7 +217,7 @@ function PurchaseOrderModal({ projectId, folder, post, store, onClose }: { proje
  * 사진대지: the 공사's photos laid out one by one in a grid. Several photos chosen, dropped or
  * pasted together each get their own card; ✎ edits one photo's 설명 and 날짜.
  */
-export function PhotoAlbum({ projectId, projectName, folder, store }: { projectId: string; projectName: string; folder: string; store: ProjectFilesStore }) {
+export function PhotoAlbum({ projectId, projectName, folder, store }: { projectId: string; projectName: string; folder: DriveFolder; store: ProjectFilesStore }) {
   const photos = store.files.filter(file => file.kind === 'photo')
     .sort((a, b) => (a.meta.date ?? '').localeCompare(b.meta.date ?? '') || a.createdAt.localeCompare(b.createdAt))
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
