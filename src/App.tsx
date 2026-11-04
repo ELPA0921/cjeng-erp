@@ -10,7 +10,9 @@ import TaxInvoices from './TaxInvoices'
 import VendorCleanup from './VendorCleanup'
 import VendorField from './VendorField'
 import { frequentVendors } from './vendors'
-import { printExpenseSheet } from './expensePrint'
+import { printExpenseSheet, sheetRowsPerPage } from './expensePrint'
+import Pager from './Pager'
+import { currentPage } from './pagination'
 import { planColumns } from './printLayout'
 import { adminOrder, adminOrders, adminProjectId, adminYearOfProject, isAdminProject } from './adminExpenses'
 import { isLegacyProjectId, isLegacyYear, legacyProjects } from './legacyExpenses'
@@ -1003,6 +1005,16 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     }),
     { supplyAmount: 0, vatAmount: 0, amount: 0 },
   )
+  // The list shows as many rows a page as a printed 지출내역서 page holds. The page belongs to one
+  // project and one sort; a row brought forward (found, moved with ▲▼, added or edited) shows on its page
+  // until another page is picked.
+  const [expensePage, setExpensePage] = useState({ key: '', page: 0 })
+  const [focusedExpenseId, setFocusedExpenseId] = useState('')
+  const expensePageKey = `${expenseProjectId}|${expenseSort.key}|${expenseSort.direction}`
+  const shownExpensePage = currentPage(filteredExpenses.length, sheetRowsPerPage, expensePage.key === expensePageKey ? expensePage.page : 0,
+    focusedExpenseId ? filteredExpenses.findIndex(expense => expense.id === focusedExpenseId) : -1)
+  const pagedExpenses = filteredExpenses.slice(shownExpensePage * sheetRowsPerPage, (shownExpensePage + 1) * sheetRowsPerPage)
+  const showExpensePage = (page: number) => { setFocusedExpenseId(''); setExpensePage({ key: expensePageKey, page }) }
   // 지출 검색 looks through every project's expenses; its conditions stay while the window is closed.
   const [searchingExpenses, setSearchingExpenses] = useState(false)
   const [expenseSearchFilters, setExpenseSearchFilters] = useState(emptyExpenseSearch)
@@ -1017,6 +1029,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     setView(isLegacyProjectId(expense.projectId, legacyOrderIds) ? 'legacyExpenses' : adminYear ? 'adminExpenses' : 'expenses')
     setExpenseSort({ key: 'date', direction: 'desc' })
     setSelectedExpenseIds([expense.id])
+    setFocusedExpenseId(expense.id)
     setSearchingExpenses(false)
     // Bring the checked row into view once the list has rendered.
     window.setTimeout(() => document.querySelector(`[data-expense-id="${CSS.escape(expense.id)}"]`)?.scrollIntoView({ block: 'center' }), 50)
@@ -1174,6 +1187,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     const sequences = expenseMove(direction)
     if (!sequences || savingOrder) return
     setOrderDraft({ projectId: expenseProjectId, sequences: { ...draftSequences, ...Object.fromEntries(sequences) } })
+    setFocusedExpenseId(selectedExpenseIds[0])
   }
   async function applyExpenseOrder() {
     if (!draftSequences || savingOrder) return
@@ -1182,9 +1196,10 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     setSavingOrder(false)
     if (saved) setOrderDraft(null)
   }
+  // 전체선택 covers the rows on the page shown.
   const allExpensesSelected =
-    filteredExpenses.length > 0 &&
-    filteredExpenses.every((expense) => selectedExpenseIds.includes(expense.id))
+    pagedExpenses.length > 0 &&
+    pagedExpenses.every((expense) => selectedExpenseIds.includes(expense.id))
   const ordersExportTable: ExportTable = {
     title: `${orderYear}년 수주대장`,
     columns: [
@@ -1467,6 +1482,9 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   }
 
   function updateExpenseSort(key: ExpenseSortKey) {
+    // A new sort starts from its first page.
+    setFocusedExpenseId('')
+    setExpensePage({ key: '', page: 0 })
     setExpenseSort((current) => ({
       key,
       direction:
@@ -1527,10 +1545,11 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   }
 
   function toggleAllExpenses() {
-    setSelectedExpenseIds(
+    const pageIds = pagedExpenses.map((expense) => expense.id)
+    setSelectedExpenseIds((current) =>
       allExpensesSelected
-        ? []
-        : filteredExpenses.map((expense) => expense.id),
+        ? current.filter((id) => !pageIds.includes(id))
+        : [...new Set([...current, ...pageIds])],
     )
   }
 
@@ -2179,6 +2198,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
       }, expenseEditRevision)
       if (!saved) return
       if (!isAdminProject(expenseForm.projectId)) setSelectedProjectId(expenseForm.projectId)
+      setFocusedExpenseId(editingExpenseId)
       setEditingExpenseId(null)
       setSelectedExpenseIds([])
       setExpenseForm((current) => ({
@@ -2197,10 +2217,11 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     }
 
     // Added at the end, the way the server stores it, so it lists above that date's older rows.
+    const addedExpenseId = crypto.randomUUID()
     const saved = await setExpenses((current) => [
       ...current,
       {
-        id: crypto.randomUUID(),
+        id: addedExpenseId,
         projectId: expenseForm.projectId,
         date: expenseForm.date,
         kind: resolvedExpenseKind,
@@ -2214,6 +2235,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     ], expenseEditRevision)
     if (!saved) return
     if (!isAdminProject(expenseForm.projectId)) setSelectedProjectId(expenseForm.projectId)
+    setFocusedExpenseId(addedExpenseId)
     setExpenseForm((current) => ({
       ...current,
       kind: '법인카드',
@@ -3366,7 +3388,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredExpenses.map((expense) => (
+                        {pagedExpenses.map((expense) => (
                           <tr key={expense.id}>
                             <td className="date-cell">{expense.date}</td>
                             <td>{expense.vendor}</td>
@@ -3409,6 +3431,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                       )}
                     </table>
                   </div>
+                  <Pager page={shownExpensePage} perPage={sheetRowsPerPage} total={filteredExpenses.length} onPage={showExpensePage} />
                 </>
               )}
 
@@ -3684,7 +3707,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredExpenses.map((expense) => (
+                    {pagedExpenses.map((expense) => (
                       <tr key={expense.id} data-expense-id={expense.id}>
                         <td className="check-cell">
                           <input
@@ -3732,9 +3755,10 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                   )}
                 </table>
               </div>
+              <Pager page={shownExpensePage} perPage={sheetRowsPerPage} total={filteredExpenses.length} onPage={showExpensePage} />
             </div>
 
-            {searchingExpenses && <ExpenseSearch expenses={searchableExpenses} orders={orders} kinds={expenseKindOptions} kindOf={normalizeExpenseKind}
+            {searchingExpenses &&<ExpenseSearch expenses={searchableExpenses} orders={orders} kinds={expenseKindOptions} kindOf={normalizeExpenseKind}
               scope={view === 'legacyExpenses' ? '22년 이전 공사와 관리비' : '모든 공사와 관리비'}
               filters={expenseSearchFilters} onFilters={setExpenseSearchFilters} onOpen={openSearchedExpense} onClose={() => setSearchingExpenses(false)} />}
             {cleaningVendors && <VendorCleanup uses={vendorUses} since={vendorCleanupSince} until={today} onApply={renameVendors} onClose={() => setCleaningVendors(false)} />}

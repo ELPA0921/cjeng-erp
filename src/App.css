@@ -699,6 +699,31 @@ table {
   padding: 0 14px;
 }
 
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.pager .compact-button {
+  min-width: 40px;
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.pager-gap {
+  color: var(--text-muted);
+}
+
+.pager-range {
+  margin-left: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 .contacts-scroll {
   max-height: 560px;
   border: 1px solid var(--line);
