@@ -16,6 +16,7 @@
     "@neondatabase/serverless": "^1.2.0",
     "fast-xml-parser": "5.11.2",
     "jose": "^6.2.13",
+    "pdfjs-dist": "6.4.299",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },

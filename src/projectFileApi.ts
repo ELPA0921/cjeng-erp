@@ -1,7 +1,10 @@
+import { picturesToPdf } from './pdfWriter.ts'
+
 // Pictures kept for a 공사 (발주서 scans and the 사진대지 album), stored through /api/files.
-export type FileKind = 'purchaseOrder' | 'photo'
+// A 발주서 that came as a PDF also keeps that PDF (purchaseOrderPdf), tied to its pages by their group.
+export type FileKind = 'purchaseOrder' | 'purchaseOrderPdf' | 'photo'
 export type ProjectFile = { id: string; projectId: string; kind: FileKind; meta: Record<string, string>; contentType: string; size: number; createdAt: string; createdBy: string }
-export type PreparedImage = { contentType: string; data: string; thumb: string }
+export type PreparedImage = { contentType: string; data: string; thumb?: string }
 
 /** The 공사's folder in the shared drive, such as "24012 집진시스템 개선 공사" in the folder of its year. */
 export type DriveFolder = { year: string; name: string }
@@ -88,6 +91,77 @@ export async function preparePhoto(file: Blob): Promise<PreparedImage> {
   } finally {
     bitmap.close()
   }
+}
+
+// A PDF of up to this many pages becomes pictures; the server keeps the PDF itself up to 3MB.
+const maxPdfPages = 30
+export const maxPdfBytes = 3_000_000
+
+/**
+ * Draws each page of a PDF as a PNG of about 200 dpi, named after the PDF and its page number, so a
+ * 발주서 that came as a PDF is kept as pictures like a captured one. pdf.js loads only when needed.
+ */
+export async function pdfPages(file: File): Promise<File[]> {
+  const [pdfjs, worker] = await Promise.all([import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?url')])
+  pdfjs.GlobalWorkerOptions.workerSrc = worker.default
+  // Character maps, standard fonts and image decoders are copied there at build time (vite.config.ts).
+  const assets = `${window.location.origin}/pdfjs/`
+  const loading = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), cMapUrl: assets + 'cmaps/', standardFontDataUrl: assets + 'standard_fonts/', wasmUrl: assets + 'wasm/' })
+  try {
+    const pdf = await loading.promise.catch(() => { throw new Error(`${file.name}: PDF를 열지 못했습니다.`) })
+    if (pdf.numPages > maxPdfPages) throw new Error(`${file.name}: PDF는 ${maxPdfPages}쪽까지 올릴 수 있습니다.`)
+    const stem = file.name.replace(/\.pdf$/i, '')
+    const pages: File[] = []
+    for (let number = 1; number <= pdf.numPages; number++) {
+      const page = await pdf.getPage(number)
+      const plain = page.getViewport({ scale: 1 })
+      const viewport = page.getViewport({ scale: Math.min(200 / 72, maxEdge / Math.max(plain.width, plain.height)) })
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(viewport.width)
+      canvas.height = Math.round(viewport.height)
+      // Drawn as for printing: in one go rather than frame by frame, so a busy or hidden tab does not slow it down.
+      await page.render({ canvas, viewport, background: '#ffffff', intent: 'print' }).promise
+      const png = await new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('PDF를 그림으로 바꾸지 못했습니다.')), 'image/png'))
+      pages.push(new File([png], `${stem}_${number}.png`, { type: 'image/png', lastModified: file.lastModified }))
+      page.cleanup()
+    }
+    return pages
+  } finally {
+    await loading.destroy()
+  }
+}
+
+/** Readies a 발주서's own PDF for upload as it is. */
+export async function preparePdf(file: File): Promise<PreparedImage> {
+  return { contentType: 'application/pdf', data: await base64(file) }
+}
+
+/** Puts the saved pictures, in order, into one PDF of A4 pages. */
+export async function picturesPdf(ids: string[]) {
+  const pictures = []
+  for (const id of ids) {
+    const response = await fetch(fileUrl(id))
+    if (!response.ok) throw new Error('발주서 사진을 불러오지 못했습니다.')
+    const bitmap = await decode(await response.blob())
+    try {
+      // The same size jpeg() draws it at.
+      const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height))
+      const picture = await jpeg(bitmap, maxEdge, 0.9)
+      pictures.push({ jpeg: new Uint8Array(await picture.arrayBuffer()), width: Math.max(1, Math.round(bitmap.width * scale)), height: Math.max(1, Math.round(bitmap.height * scale)) })
+    } finally {
+      bitmap.close()
+    }
+  }
+  return new Blob([picturesToPdf(pictures)], { type: 'application/pdf' })
+}
+
+/** Saves a file made in the browser under the given name. */
+export function saveBlob(blob: Blob, name: string) {
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = name
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(link.href), 60_000)
 }
 
 /** A file's own date (when the photo was taken or saved) as YYYY-MM-DD in local time. */

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { PGlite } from '@electric-sql/pglite'
 import { generateKeyPairSync } from 'node:crypto'
 import { createDrive, driveConfig, syncOrderFolders } from './googleDrive.ts'
-import { deleteFile, ensureFileSchema, insertFile, listFiles, listUnmoved, markMoved, pictureName, readFile, updateFileMeta, validateUpload } from './projectFiles.ts'
+import { deleteFile, ensureFileSchema, insertFile, kindFolder, listFiles, listUnmoved, markMoved, pictureName, readFile, updateFileMeta, validateUpload } from './projectFiles.ts'
 
 // Same stand-in for the Neon driver as workspaceDb.test.mjs: tagged templates become parameterized queries.
 function neonLike(db) {
@@ -236,4 +236,16 @@ test('saving 수주대장 makes, follows and trashes the 공사 folders', async 
   const many = Array.from({ length: 21 }, (_, i) => order('x' + i, '2026', String(26100 + i), '공사'))
   assert.deepEqual(await syncOrderFolders(drive, [], many), { done: 0, failed: 0, skipped: 21 })
   assert.equal(calls.length, 0)
+})
+
+test('a 발주서 keeps the PDF it came as, and only a real PDF passes as one', async () => {
+  const pdf = Buffer.from('%PDF-1.7\n발주서')
+  const upload = { projectId: 'shared-2026-26001', kind: 'purchaseOrderPdf', contentType: 'application/pdf', data: pdf.toString('base64'), thumb: jpeg.toString('base64'), meta: { vendor: '연일철강', poNumber: 'CJE-1', fileName: '발주서.pdf', group: 'g1' } }
+  const checked = validateUpload(upload)
+  assert.deepEqual([checked.contentType, checked.data, checked.thumb, checked.meta.group], ['application/pdf', pdf, null, 'g1'])
+  assert.throws(() => validateUpload({ ...upload, kind: 'purchaseOrder' }), /JPG, PNG, WebP/)
+  assert.throws(() => validateUpload({ ...upload, contentType: 'image/png', data: png.toString('base64') }), /PDF 파일만/)
+  assert.throws(() => validateUpload({ ...upload, data: png.toString('base64') }), /파일을 확인/)
+  assert.equal(pictureName('purchaseOrderPdf', checked.meta, 'application/pdf'), 'CJE-1_연일철강_발주서.pdf')
+  assert.equal(kindFolder('purchaseOrderPdf'), '발주서')
 })

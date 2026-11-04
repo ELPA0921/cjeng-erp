@@ -4,7 +4,8 @@ import type { NeonQueryFunction } from '@neondatabase/serverless'
 // table, apart from the workspace rows, so the polled workspace never carries image bytes.
 type Sql = NeonQueryFunction<false, false>
 
-export const fileKinds = ['purchaseOrder', 'photo'] as const
+// A 발주서 that came as a PDF keeps that PDF too (purchaseOrderPdf), tied to its pages by their group.
+export const fileKinds = ['purchaseOrder', 'purchaseOrderPdf', 'photo'] as const
 export type FileKind = typeof fileKinds[number]
 export type ProjectFileMeta = Record<string, string>
 export type ProjectFile = { id: string; projectId: string; kind: FileKind; meta: ProjectFileMeta; contentType: string; size: number; createdAt: string; createdBy: string }
@@ -13,6 +14,7 @@ export type ProjectFile = { id: string; projectId: string; kind: FileKind; meta:
 const metaFields: Record<FileKind, Record<string, number>> = {
   // A 발주서 of several pages keeps one picture per row tied together by the same group.
   purchaseOrder: { vendor: 200, item: 500, date: 10, poNumber: 50, fileName: 200, group: 100 },
+  purchaseOrderPdf: { vendor: 200, item: 500, date: 10, poNumber: 50, fileName: 200, group: 100 },
   photo: { caption: 500, date: 10, fileName: 200, group: 100 },
 }
 // Uploads arrive as base64 JSON, so the decoded picture stays under Vercel's 4.5MB request body.
@@ -22,6 +24,7 @@ const signatures: Record<string, (bytes: Buffer) => boolean> = {
   'image/jpeg': bytes => bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff,
   'image/png': bytes => bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
   'image/webp': bytes => bytes.subarray(0, 4).toString('latin1') === 'RIFF' && bytes.subarray(8, 12).toString('latin1') === 'WEBP',
+  'application/pdf': bytes => bytes.subarray(0, 5).toString('latin1') === '%PDF-',
 }
 
 export class FileInputError extends Error {}
@@ -52,13 +55,13 @@ function image(value: unknown, contentType: string, max: number) {
   return bytes
 }
 
-/** Checks an upload; the picture must really be the JPEG, PNG or WebP it claims to be. */
+/** Checks an upload; the picture must really be the JPEG, PNG or WebP it claims to be, and a 발주서's PDF a PDF. */
 export function validateUpload(value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new FileInputError('입력값을 확인해 주세요.')
   const input = value as Record<string, unknown>
   const kind = validateKind(input.kind)
   const contentType = text(input.contentType, 20, true)
-  if (!signatures[contentType]) throw new FileInputError('JPG, PNG, WebP 사진만 올릴 수 있습니다.')
+  if (!signatures[contentType] || (contentType === 'application/pdf') !== (kind === 'purchaseOrderPdf')) throw new FileInputError(kind === 'purchaseOrderPdf' ? 'PDF 파일만 올릴 수 있습니다.' : 'JPG, PNG, WebP 사진만 올릴 수 있습니다.')
   return {
     projectId: text(input.projectId, 200, true),
     // The 공사's folder name in the shared drive, such as "24012 집진시스템 개선 공사".
@@ -69,7 +72,7 @@ export function validateUpload(value: unknown) {
     meta: validateMeta(kind, input.meta ?? {}),
     contentType,
     data: image(input.data, contentType, maxFileBytes),
-    thumb: input.thumb === undefined ? null : image(input.thumb, 'image/jpeg', maxThumbBytes),
+    thumb: input.thumb === undefined || kind === 'purchaseOrderPdf' ? null : image(input.thumb, 'image/jpeg', maxThumbBytes),
   }
 }
 
@@ -81,15 +84,15 @@ export async function ensureFileSchema(sql: Sql) {
   await sql`ALTER TABLE cjeng_project_files ALTER COLUMN data DROP NOT NULL`
 }
 
-const extension = (contentType: string) => contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : 'jpg'
+const extension = (contentType: string) => contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : contentType === 'application/pdf' ? 'pdf' : 'jpg'
 
 /** The file name a picture gets in the shared drive, from its details and the name it was uploaded with. */
 export function pictureName(kind: FileKind, meta: ProjectFileMeta, contentType: string) {
   const stem = (meta.fileName ?? '').replace(/\.[^.]*$/, '')
-  const parts = kind === 'purchaseOrder' ? [meta.poNumber || meta.date, meta.vendor, stem] : [meta.date, meta.caption, stem]
-  return `${parts.filter(Boolean).join('_') || (kind === 'purchaseOrder' ? '발주서' : '사진')}.${extension(contentType)}`
+  const parts = kind !== 'photo' ? [meta.poNumber || meta.date, meta.vendor, stem] : [meta.date, meta.caption, stem]
+  return `${parts.filter(Boolean).join('_') || (kind !== 'photo' ? '발주서' : '사진')}.${extension(contentType)}`
 }
-export const kindFolder = (kind: FileKind) => kind === 'purchaseOrder' ? '발주서' : '사진대지'
+export const kindFolder = (kind: FileKind) => kind === 'photo' ? '사진대지' : '발주서'
 
 const toFile = (row: Record<string, unknown>): ProjectFile => ({
   id: String(row.id), projectId: String(row.project_id), kind: row.kind as FileKind, meta: row.meta as ProjectFileMeta,

@@ -10,7 +10,7 @@ let schema: Promise<void> | null = null
 const fileStore = { sql: () => workspaceSql(settings().databaseUrl), ensureFileSchema, listFiles, readFile, insertFile, updateFileMeta, deleteFile, listUnmoved, markMoved }
 const downloadName = (name: string, contentType: string) => {
   const base = [...name].map(char => char < ' ' || '\\/:*?"<>|'.includes(char) ? '_' : char).join('').trim().slice(0, 120) || 'photo'
-  return `${base}.${contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : 'jpg'}`
+  return `${base}.${contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : contentType === 'application/pdf' ? 'pdf' : 'jpg'}`
 }
 // Pictures moved per call, small enough to finish well inside a function's time limit.
 const moveBatch = 10

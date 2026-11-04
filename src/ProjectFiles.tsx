@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react'
 import ModalClose from './ModalClose'
 import type { ProjectFilesStore } from './useProjectFiles'
-import { deleteProjectFile, fileDate, fileUrl, openImageViewer, prepareImage, preparePhoto, updateProjectFile, uploadProjectFile, type DriveFolder, type FileKind, type ProjectFile } from './projectFileApi'
+import { deleteProjectFile, downloadUrl, fileDate, fileUrl, maxPdfBytes, openImageViewer, pdfPages, picturesPdf, prepareImage, preparePdf, preparePhoto, saveBlob, updateProjectFile, uploadProjectFile, type DriveFolder, type FileKind, type ProjectFile } from './projectFileApi'
 
-const imageFiles = (list: FileList | DataTransferItemList | null | undefined) =>
-  [...(list ?? [])].map(item => item instanceof File ? item : item.kind === 'file' ? item.getAsFile() : null).filter((file): file is File => !!file && file.type.startsWith('image/'))
+const isPdf = (file: File) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+/** The pictures among the files, and PDFs too where withPdf says so. */
+const imageFiles = (list: FileList | DataTransferItemList | null | undefined, withPdf = false) =>
+  [...(list ?? [])].map(item => item instanceof File ? item : item.kind === 'file' ? item.getAsFile() : null)
+    .filter((file): file is File => !!file && (file.type.startsWith('image/') || (withPdf && isPdf(file))))
 const message = (error: unknown) => error instanceof Error ? error.message : '저장하지 못했습니다.'
 
 /** A picture pasted anywhere on the page is handed over; pasted text still goes to the text box. */
@@ -31,15 +34,16 @@ function FilesUnavailable({ store }: { store: ProjectFilesStore }) {
   return null
 }
 
-/** One 발주서 with its pages. The first picture carries the details. */
-type FileGroup = { key: string; pages: ProjectFile[]; meta: Record<string, string> }
+/** One 발주서 with its pages, and the PDF it came as if it did. The first picture carries the details. */
+type FileGroup = { key: string; pages: ProjectFile[]; meta: Record<string, string>; pdf?: ProjectFile }
 
 // Pictures of one group share meta.group; ones saved before groups existed have none and go by their own id.
 const groupKey = (file: ProjectFile) => file.meta.group || file.id
 const groupPages = (files: ProjectFile[], kind: FileKind, key: string) =>
   files.filter(file => file.kind === kind && groupKey(file) === key).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+const groupPdf = (files: ProjectFile[], key: string) => files.find(file => file.kind === 'purchaseOrderPdf' && file.meta.group === key)
 const fileGroups = (files: ProjectFile[], kind: FileKind): FileGroup[] =>
-  [...new Set(files.filter(file => file.kind === kind).map(groupKey))].map(key => { const pages = groupPages(files, kind, key); return { key, pages, meta: pages[0].meta } })
+  [...new Set(files.filter(file => file.kind === kind).map(groupKey))].map(key => { const pages = groupPages(files, kind, key); return { key, pages, meta: pages[0].meta, pdf: groupPdf(files, key) } })
 
 /** Every picture of the groups in order for the viewer; a group of several numbers its pages. */
 function viewerItems(groups: FileGroup[], title: (group: FileGroup) => string, name: (group: FileGroup, index: number) => string) {
@@ -55,7 +59,7 @@ function viewerItems(groups: FileGroup[], title: (group: FileGroup) => string, n
 
 async function deleteGroup(store: ProjectFilesStore, group: FileGroup) {
   try {
-    for (const page of group.pages) { await deleteProjectFile(page.id); store.removed(page.id) }
+    for (const page of [...group.pages, ...group.pdf ? [group.pdf] : []]) { await deleteProjectFile(page.id); store.removed(page.id) }
   } catch (error) { window.alert(message(error)) }
 }
 
@@ -65,17 +69,32 @@ async function deleteGroup(store: ProjectFilesStore, group: FileGroup) {
  */
 function useGroupEditor(store: ProjectFilesStore, projectId: string, folder: DriveFolder, kind: FileKind, group: FileGroup | null) {
   const [key] = useState(() => group?.key ?? crypto.randomUUID())
-  const [pictures, setPictures] = useState<{ file: File; url: string }[]>([])
+  // A page drawn from a PDF remembers that PDF.
+  const [pictures, setPictures] = useState<{ file: File; url: string; pdf?: File }[]>([])
   const [removing, setRemoving] = useState<string[]>([])
+  const [converting, setConverting] = useState(false)
+  const [problem, setProblem] = useState('')
   const urls = useRef<string[]>([])
   useEffect(() => { const made = urls.current; return () => made.forEach(url => URL.revokeObjectURL(url)) }, [])
-  const add = (files: File[]) => {
-    const added = files.map(file => ({ file, url: URL.createObjectURL(file) }))
+  /** Adds pictures as they are and each page of a PDF as a picture of its own. */
+  const add = async (files: File[]) => {
+    const added: { file: File; url: string; pdf?: File }[] = []
+    setProblem('')
+    try {
+      for (const file of files) {
+        if (!isPdf(file)) { added.push({ file, url: URL.createObjectURL(file) }); continue }
+        setConverting(true)
+        for (const page of await pdfPages(file)) added.push({ file: page, url: URL.createObjectURL(page), pdf: file })
+      }
+    } catch (error) { setProblem(message(error)) } finally { setConverting(false) }
     urls.current.push(...added.map(picture => picture.url))
     setPictures(current => [...current, ...added])
   }
   usePastedImages(add)
   const saved = groupPages(store.files, kind, key).filter(page => !removing.includes(page.id))
+  // The PDF a 발주서 came as is kept only while its pages are exactly that PDF's.
+  const pdfs = new Set(pictures.map(picture => picture.pdf))
+  const newPdf = !saved.length && pdfs.size === 1 ? [...pdfs][0] : undefined
   const pages = [
     ...saved.map(page => ({ key: page.id, src: fileUrl(page.id, true), remove: () => setRemoving(current => [...current, page.id]) })),
     ...pictures.map(picture => ({ key: picture.url, src: picture.url, remove: () => setPictures(current => current.filter(item => item !== picture)) })),
@@ -84,24 +103,29 @@ function useGroupEditor(store: ProjectFilesStore, projectId: string, folder: Dri
   /** Writes the details the form changed onto every saved picture, then uploads the new ones and drops the removed ones. */
   async function save(meta: Record<string, string>) {
     const changed = Object.entries(meta).filter(([field, value]) => value !== (group?.meta[field] ?? ''))
-    for (const page of saved) {
+    const oldPdf = groupPdf(store.files, key)
+    const pagesChanged = pictures.length > 0 || removing.length > 0
+    for (const page of [...saved, ...oldPdf && !pagesChanged ? [oldPdf] : []]) {
       if (changed.some(([field, value]) => page.meta[field] !== value)) store.replaced(await updateProjectFile(page.id, { ...page.meta, ...Object.fromEntries(changed) }))
     }
     for (const picture of pictures) {
       store.added(await uploadProjectFile(projectId, kind, { ...meta, group: key, fileName: picture.file.name }, await prepareImage(picture.file), folder))
       setPictures(current => current.filter(item => item !== picture))
     }
+    if (oldPdf && pagesChanged) { await deleteProjectFile(oldPdf.id); store.removed(oldPdf.id) }
+    if (newPdf && newPdf.size <= maxPdfBytes) store.added(await uploadProjectFile(projectId, 'purchaseOrderPdf', { ...meta, group: key, fileName: newPdf.name }, await preparePdf(newPdf), folder))
     for (const id of removing) {
       if (store.files.some(file => file.id === id)) await deleteProjectFile(id)
       store.removed(id)
     }
   }
-  return { pages, add, save }
+  return { pages, add, save, converting, problem, pdfTooBig: !!newPdf && newPdf.size > maxPdfBytes }
 }
 
 /** The group's pictures in order, each with × to take it out, and a tile to add more. */
 function PageStrip({ editor, disabled, empty }: { editor: ReturnType<typeof useGroupEditor>; disabled: boolean; empty: string }) {
-  const picker = <input type="file" accept="image/*" multiple onChange={event => { const files = imageFiles(event.target.files); event.target.value = ''; editor.add(files) }} />
+  const picker = <input type="file" accept="image/*,application/pdf,.pdf" multiple disabled={editor.converting} onChange={event => { const files = imageFiles(event.target.files, true); event.target.value = ''; void editor.add(files) }} />
+  if (editor.converting && !editor.pages.length) return <p className="file-drop"><span>PDF를 그림으로 바꾸는 중…</span></p>
   if (!editor.pages.length) return <label className="file-drop"><span>{empty}</span>{picker}</label>
   return <div className="page-strip">
     {editor.pages.map((page, index) => <figure key={page.key}>
@@ -109,7 +133,7 @@ function PageStrip({ editor, disabled, empty }: { editor: ReturnType<typeof useG
       <figcaption>{index + 1}장<button type="button" title="이 장 빼기" aria-label={`${index + 1}장 빼기`} disabled={disabled} onClick={page.remove}>×</button></figcaption>
     </figure>)}
     <label className="file-drop page-add">
-      <span>+ 장 추가<small>붙여넣기·끌어다 놓기·선택</small></span>
+      <span>{editor.converting ? 'PDF를 그림으로 바꾸는 중…' : <>+ 장 추가<small>사진·PDF 붙여넣기·끌어다 놓기·선택</small></>}</span>
       {picker}
     </label>
   </div>
@@ -128,9 +152,18 @@ export function PurchaseOrderBoard({ projectId, orderNo, folder, store }: { proj
   const posts = fileGroups(store.files, 'purchaseOrder')
     .sort((a, b) => (b.meta.date ?? '').localeCompare(a.meta.date ?? '') || (b.meta.poNumber ?? '').localeCompare(a.meta.poNumber ?? '') || b.pages[0].createdAt.localeCompare(a.pages[0].createdAt))
   const [editing, setEditing] = useState<FileGroup | 'new' | null>(null)
-  const items = viewerItems(posts, ({ meta }) => [orderNo, meta.vendor, meta.item, meta.poNumber].filter(Boolean).join(' · '),
-    ({ meta }) => [orderNo, meta.poNumber || meta.date, meta.vendor].filter(Boolean).join('_') || '발주서')
+  const fileName = ({ meta }: FileGroup) => [orderNo, meta.poNumber || meta.date, meta.vendor].filter(Boolean).join('_') || '발주서'
+  const items = viewerItems(posts, ({ meta }) => [orderNo, meta.vendor, meta.item, meta.poNumber].filter(Boolean).join(' · '), fileName)
   const open = (post: FileGroup) => openImageViewer(items, items.findIndex(item => item.id === post.pages[0].id))
+  const [makingPdf, setMakingPdf] = useState('')
+  /** Saves the PDF the 발주서 came as, or one made from its pictures. */
+  async function downloadPdf(post: FileGroup) {
+    if (post.pdf) { const link = document.createElement('a'); link.href = downloadUrl(post.pdf.id, fileName(post)); link.click(); return }
+    setMakingPdf(post.key)
+    try { saveBlob(await picturesPdf(post.pages.map(page => page.id)), `${fileName(post)}.pdf`) }
+    catch (error) { window.alert(message(error)) }
+    finally { setMakingPdf('') }
+  }
   const remove = (post: FileGroup) => {
     if (window.confirm(`${post.meta.vendor || '이'} 발주서를 삭제할까요? 사진${post.pages.length > 1 ? ` ${post.pages.length}장` : ''}도 함께 지워집니다.`)) deleteGroup(store, post)
   }
@@ -156,6 +189,7 @@ export function PurchaseOrderBoard({ projectId, orderNo, folder, store }: { proj
             <td className="date-cell">{post.meta.date || '-'}</td>
             <td>{post.meta.poNumber || '-'}</td>
             <td className="file-board-actions" onClick={event => event.stopPropagation()}>
+              <button className="ghost-button compact-button" type="button" disabled={makingPdf === post.key} title={post.pdf ? '올린 PDF 그대로 받기' : '발주서 그림을 모아 PDF로 받기'} onClick={() => downloadPdf(post)}>{makingPdf === post.key ? 'PDF 만드는 중…' : 'PDF'}</button>
               <button className="ghost-button compact-button" type="button" onClick={() => setEditing(post)}>수정</button>
               <button className="ghost-button compact-button danger" type="button" onClick={() => remove(post)}>삭제</button>
             </td>
@@ -178,11 +212,12 @@ function PurchaseOrderModal({ projectId, folder, post, store, onClose }: { proje
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const set = (patch: Partial<PurchaseOrderForm>) => setForm(current => ({ ...current, ...patch }))
-  const drop = (event: DragEvent) => { event.preventDefault(); editor.add(imageFiles(event.dataTransfer.files)) }
+  const drop = (event: DragEvent) => { event.preventDefault(); void editor.add(imageFiles(event.dataTransfer.files, true)) }
 
   async function save(event: FormEvent) {
     event.preventDefault()
-    if (!editor.pages.length) { setError('발주서 사진을 한 장 이상 붙여넣거나 선택해 주세요.'); return }
+    if (editor.converting) return
+    if (!editor.pages.length) { setError('발주서 사진이나 PDF를 한 장 이상 붙여넣거나 선택해 주세요.'); return }
     setSaving(true)
     setError('')
     try {
@@ -194,20 +229,21 @@ function PurchaseOrderModal({ projectId, folder, post, store, onClose }: { proje
   return <div className="modal-backdrop" role="presentation">
     <form className="modal-panel form-panel file-group-modal" onSubmit={save} onDragOver={event => event.preventDefault()} onDrop={drop}>
       <div className="modal-heading">
-        <div><h3>{post ? '발주서 수정' : '발주서 등록'}</h3><span>{post ? '내용을 고치거나 장을 더하고 뺄 수 있습니다.' : '캡처한 발주서를 Ctrl+V로 붙여넣거나 끌어다 놓으세요. 여러 장이면 차례대로 넣으세요.'}</span></div>
+        <div><h3>{post ? '발주서 수정' : '발주서 등록'}</h3><span>{post ? '내용을 고치거나 장을 더하고 뺄 수 있습니다.' : '캡처한 발주서를 Ctrl+V로 붙여넣거나 사진·PDF를 끌어다 놓으세요. PDF는 쪽마다 한 장으로 들어갑니다.'}</span></div>
         <ModalClose onClose={onClose} disabled={saving} />
       </div>
-      <PageStrip editor={editor} disabled={saving} empty="여기에 발주서 사진을 붙여넣기(Ctrl+V)·끌어다 놓기·클릭해서 선택 (여러 장 가능)" />
+      <PageStrip editor={editor} disabled={saving} empty="여기에 발주서 사진이나 PDF를 붙여넣기(Ctrl+V)·끌어다 놓기·클릭해서 선택 (여러 장 가능)" />
       <div className="two-columns">
         <label>거래처<input value={form.vendor} placeholder="상호(법인명)" onChange={event => set({ vendor: event.target.value })} /></label>
         <label>발주번호<input value={form.poNumber} placeholder="CJE-2502071" onChange={event => set({ poNumber: event.target.value })} /></label>
         <label>내용<input value={form.item} placeholder="1번 품목 (2개 이상이면 '외')" onChange={event => set({ item: event.target.value })} /></label>
         <label>날짜<input type="date" value={form.date} onChange={event => set({ date: event.target.value })} /></label>
       </div>
-      {error && <p className="files-note error">{error}</p>}
+      {editor.pdfTooBig && <p className="files-note">PDF가 3MB를 넘어 원본 PDF는 저장하지 않습니다. PDF로 받을 때는 저장된 그림을 모아 만듭니다.</p>}
+      {(error || editor.problem) && <p className="files-note error">{error || editor.problem}</p>}
       <div className="modal-actions">
         <button className="ghost-button" type="button" disabled={saving} onClick={onClose}>취소</button>
-        <button className="primary-button" type="submit" disabled={saving}>{saving ? '저장 중…' : '저장'}</button>
+        <button className="primary-button" type="submit" disabled={saving || editor.converting}>{saving ? '저장 중…' : '저장'}</button>
       </div>
     </form>
   </div>
