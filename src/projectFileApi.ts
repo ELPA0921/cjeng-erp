@@ -173,13 +173,32 @@ export function fileDate(file: File) {
 export type ViewerItem = { id: string; title: string; name: string }
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!)
 
-/** Opens pictures in a new window, one at a time, with 다운로드, ‹ › (or the arrow keys) to move between them and ✕ (or Esc) to close. */
+/** Opens saved pictures in a new tab, one at a time, with 다운로드. */
 export function openImageViewer(items: ViewerItem[], start: number) {
-  const viewer = window.open('', '_blank')
-  if (!viewer) return
   const origin = window.location.origin
-  const pictures = items.map(item => ({ title: item.title, src: origin + fileUrl(item.id), download: origin + downloadUrl(item.id, item.name) }))
-  viewer.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(items[start]?.title ?? '사진')}</title><style>
+  showPictures(window.open('', '_blank'), items.map(item => ({ title: item.title, src: origin + fileUrl(item.id), download: origin + downloadUrl(item.id, item.name) })), start)
+}
+
+/**
+ * Opens the pages of a 발주서 being written in a window of its own at the right of the screen, so its
+ * text can be read while the form is filled in. The next click reuses that window.
+ */
+export function openPicturePreview(pictures: { title: string; src: string }[], start: number) {
+  const width = Math.min(960, Math.round(window.screen.availWidth / 2))
+  const height = window.screen.availHeight
+  const viewer = window.open('', 'cjeng-picture-preview', `popup,width=${width},height=${height},left=${window.screen.availWidth - width},top=0`)
+  showPictures(viewer, pictures, start)
+  viewer?.focus()
+}
+
+/**
+ * Writes the picture viewer into a window: one picture at a time, fitted to the window or, clicked, at
+ * full size; ‹ › (or the arrow keys) move between them, 다운로드 when there is one, ✕ (or Esc) closes.
+ */
+function showPictures(viewer: Window | null, pictures: { title: string; src: string; download?: string }[], start: number) {
+  if (!viewer) return
+  viewer.document.open()
+  viewer.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(pictures[start]?.title ?? '사진')}</title><style>
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; background: #1f2933; color: #f5f7fa; font-family: "Malgun Gothic", "맑은 고딕", sans-serif; }
     body { display: grid; grid-template-rows: auto 1fr; }
@@ -190,9 +209,10 @@ export function openImageViewer(items: ViewerItem[], start: number) {
     a.download { border-color: #0b806f; background: #0b806f; }
     button.close { min-width: 36px; padding: 7px 10px; font-size: 16px; line-height: 1; }
     button:disabled { cursor: default; opacity: 0.4; }
-    main { display: grid; place-items: center; overflow: auto; padding: 12px; }
-    img { max-width: 100%; max-height: calc(100vh - 80px); background: #fff; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); }
-  </style></head><body><header><strong id="title"></strong><span id="count"></span><button id="prev" type="button">‹ 이전</button><button id="next" type="button">다음 ›</button><a id="download" class="download">다운로드</a><button id="close" class="close" type="button" aria-label="닫기" title="닫기 (Esc)">✕</button></header><main><img id="picture" alt=""></main><script>
+    main { display: flex; overflow: auto; padding: 12px; }
+    img { margin: auto; max-width: 100%; max-height: calc(100vh - 80px); background: #fff; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); cursor: zoom-in; }
+    img.actual { max-width: none; max-height: none; cursor: zoom-out; }
+  </style></head><body><header><strong id="title"></strong><span id="count"></span><button id="prev" type="button">‹ 이전</button><button id="next" type="button">다음 ›</button><a id="download" class="download">다운로드</a><span>사진을 누르면 크게/작게</span><button id="close" class="close" type="button" aria-label="닫기" title="닫기 (Esc)">✕</button></header><main><img id="picture" alt=""></main><script>
     var pictures = ${JSON.stringify(pictures).replace(/</g, '\\u003c')}, index = ${start}
     function show(next) {
       index = Math.max(0, Math.min(pictures.length - 1, next))
@@ -201,7 +221,9 @@ export function openImageViewer(items: ViewerItem[], start: number) {
       document.getElementById('picture').alt = picture.title
       document.getElementById('title').textContent = picture.title
       document.title = picture.title
-      document.getElementById('download').href = picture.download
+      document.getElementById('picture').className = ''
+      document.getElementById('download').hidden = !picture.download
+      if (picture.download) document.getElementById('download').href = picture.download
       document.getElementById('count').textContent = pictures.length > 1 ? (index + 1) + ' / ' + pictures.length : ''
       document.getElementById('prev').disabled = index === 0
       document.getElementById('next').disabled = index === pictures.length - 1
@@ -210,6 +232,7 @@ export function openImageViewer(items: ViewerItem[], start: number) {
     document.getElementById('prev').onclick = function () { show(index - 1) }
     document.getElementById('next').onclick = function () { show(index + 1) }
     document.getElementById('close').onclick = function () { window.close() }
+    document.getElementById('picture').onclick = function () { this.classList.toggle('actual') }
     document.addEventListener('keydown', function (event) { if (event.key === 'ArrowLeft') show(index - 1); if (event.key === 'ArrowRight') show(index + 1); if (event.key === 'Escape') window.close() })
     show(index)
   </script></body></html>`)

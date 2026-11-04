@@ -1672,6 +1672,13 @@ input:disabled {
   object-fit: contain;
 }
 
+.page-strip .page-view {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+
 .page-strip figcaption {
   display: flex;
   align-items: center;

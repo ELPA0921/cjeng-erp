@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react'
 import ModalClose from './ModalClose'
 import type { ProjectFilesStore } from './useProjectFiles'
-import { deleteProjectFile, downloadUrl, fileDate, fileUrl, maxPdfBytes, openImageViewer, pdfPages, picturesPdf, prepareImage, preparePdf, preparePhoto, saveBlob, updateProjectFile, uploadProjectFile, type DriveFolder, type FileKind, type ProjectFile } from './projectFileApi'
+import { deleteProjectFile, downloadUrl, fileDate, fileUrl, maxPdfBytes, openImageViewer, openPicturePreview, pdfPages, picturesPdf, prepareImage, preparePdf, preparePhoto, saveBlob, updateProjectFile, uploadProjectFile, type DriveFolder, type FileKind, type ProjectFile } from './projectFileApi'
 
 const isPdf = (file: File) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
 /** The pictures among the files, and PDFs too where withPdf says so. */
@@ -96,8 +96,8 @@ function useGroupEditor(store: ProjectFilesStore, projectId: string, folder: Dri
   const pdfs = new Set(pictures.map(picture => picture.pdf))
   const newPdf = !saved.length && pdfs.size === 1 ? [...pdfs][0] : undefined
   const pages = [
-    ...saved.map(page => ({ key: page.id, src: fileUrl(page.id, true), remove: () => setRemoving(current => [...current, page.id]) })),
-    ...pictures.map(picture => ({ key: picture.url, src: picture.url, remove: () => setPictures(current => current.filter(item => item !== picture)) })),
+    ...saved.map(page => ({ key: page.id, src: fileUrl(page.id, true), full: window.location.origin + fileUrl(page.id), remove: () => setRemoving(current => [...current, page.id]) })),
+    ...pictures.map(picture => ({ key: picture.url, src: picture.url, full: picture.url, remove: () => setPictures(current => current.filter(item => item !== picture)) })),
   ]
 
   /** Writes the details the form changed onto every saved picture, then uploads the new ones and drops the removed ones. */
@@ -122,14 +122,16 @@ function useGroupEditor(store: ProjectFilesStore, projectId: string, folder: Dri
   return { pages, add, save, converting, problem, pdfTooBig: !!newPdf && newPdf.size > maxPdfBytes }
 }
 
-/** The group's pictures in order, each with × to take it out, and a tile to add more. */
+/** The group's pictures in order, each opening big in a window beside the form, with × to take it out, and a tile to add more. */
 function PageStrip({ editor, disabled, empty }: { editor: ReturnType<typeof useGroupEditor>; disabled: boolean; empty: string }) {
   const picker = <input type="file" accept="image/*,application/pdf,.pdf" multiple disabled={editor.converting} onChange={event => { const files = imageFiles(event.target.files, true); event.target.value = ''; void editor.add(files) }} />
   if (editor.converting && !editor.pages.length) return <p className="file-drop"><span>PDF를 그림으로 바꾸는 중…</span></p>
   if (!editor.pages.length) return <label className="file-drop"><span>{empty}</span>{picker}</label>
   return <div className="page-strip">
     {editor.pages.map((page, index) => <figure key={page.key}>
-      <img src={page.src} alt={`${index + 1}장`} />
+      <button className="page-view" type="button" title="새 창에서 크게 보기" onClick={() => openPicturePreview(editor.pages.map((item, at) => ({ title: `발주서 ${at + 1}장`, src: item.full })), index)}>
+        <img src={page.src} alt={`${index + 1}장`} />
+      </button>
       <figcaption>{index + 1}장<button type="button" title="이 장 빼기" aria-label={`${index + 1}장 빼기`} disabled={disabled} onClick={page.remove}>×</button></figcaption>
     </figure>)}
     <label className="file-drop page-add">
@@ -229,7 +231,7 @@ function PurchaseOrderModal({ projectId, folder, post, store, onClose }: { proje
   return <div className="modal-backdrop" role="presentation">
     <form className="modal-panel form-panel file-group-modal" onSubmit={save} onDragOver={event => event.preventDefault()} onDrop={drop}>
       <div className="modal-heading">
-        <div><h3>{post ? '발주서 수정' : '발주서 등록'}</h3><span>{post ? '내용을 고치거나 장을 더하고 뺄 수 있습니다.' : '캡처한 발주서를 Ctrl+V로 붙여넣거나 사진·PDF를 끌어다 놓으세요. PDF는 쪽마다 한 장으로 들어갑니다.'}</span></div>
+        <div><h3>{post ? '발주서 수정' : '발주서 등록'}</h3><span>{post ? '내용을 고치거나 장을 더하고 뺄 수 있습니다.' : '캡처한 발주서를 Ctrl+V로 붙여넣거나 사진·PDF를 끌어다 놓으세요. PDF는 쪽마다 한 장으로 들어가고, 사진을 누르면 새 창에서 크게 보입니다.'}</span></div>
         <ModalClose onClose={onClose} disabled={saving} />
       </div>
       <PageStrip editor={editor} disabled={saving} empty="여기에 발주서 사진이나 PDF를 붙여넣기(Ctrl+V)·끌어다 놓기·클릭해서 선택 (여러 장 가능)" />
