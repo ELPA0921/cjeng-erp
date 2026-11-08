@@ -20,6 +20,8 @@ import ModalClose from './ModalClose'
 import OutputMenu from './OutputMenu'
 import ExpenseSearch from './ExpenseSearch'
 import { emptyExpenseSearch } from './expenseSearchFilters'
+import OrderSearch from './OrderSearch'
+import { emptyOrderSearch } from './orderSearchFilters'
 import { moveWithinDate, newestFirstOrder } from './expenseOrder'
 import { PhotoAlbum, PurchaseOrderBoard } from './ProjectFiles'
 import { projectFolder } from './projectFileApi'
@@ -1043,6 +1045,17 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     setSearchingExpenses(false)
     // Bring the checked row into view once the list has rendered.
     window.setTimeout(() => document.querySelector(`[data-expense-id="${CSS.escape(expense.id)}"]`)?.scrollIntoView({ block: 'center' }), 50)
+  }
+  // 수주 검색 looks through every year's 수주대장; its conditions stay while the window is closed.
+  const [searchingOrders, setSearchingOrders] = useState(false)
+  const [orderSearchFilters, setOrderSearchFilters] = useState(emptyOrderSearch)
+  const [foundOrderId, setFoundOrderId] = useState('')
+  function openSearchedOrder(order: Order) {
+    setOrderYear(getOrderYear(order))
+    setSelectedOrderIds([order.id])
+    setFoundOrderId(order.id)
+    setSearchingOrders(false)
+    window.setTimeout(() => document.querySelector(`[data-order-id="${CSS.escape(order.id)}"]`)?.scrollIntoView({ block: 'center' }), 50)
   }
   const filteredWorkLogs = [...workLogs]
     .filter((workLog) => workLog.projectId === selectedProjectId)
@@ -2872,13 +2885,19 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                   <h3>수주대장</h3>
                   <span>공사명을 클릭하면 해당 공사 상세로 이동</span>
                 </div>
-                <button
-                  className="primary-button"
-                  type="button"
-                  onClick={openNewOrderModal}
-                >
-                  수주 등록
-                </button>
+                <div className="order-heading-actions">
+                  <button className="ghost-button expense-search-open" type="button" title="모든 년도의 수주대장에서 수주처·공사현장·공사명 등으로 찾습니다" onClick={() => setSearchingOrders(true)}>
+                    <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" strokeWidth="2" /><path d="m16 16 4.5 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+                    수주 검색
+                  </button>
+                  <button
+                    className="primary-button"
+                    type="button"
+                    onClick={openNewOrderModal}
+                  >
+                    수주 등록
+                  </button>
+                </div>
               </div>
               <div className="contact-actions">
                 <span>선택 {selectedOrderCount}건</span>
@@ -2971,7 +2990,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                   </thead>
                   <tbody>
                     {filteredOrders.map((order) => (
-                      <tr key={order.id}>
+                      <tr key={order.id} data-order-id={order.id} className={order.id === foundOrderId && selectedOrderIds.includes(order.id) ? 'order-found' : undefined}>
                         <td className="check-cell">
                           <input
                             aria-label={`수주 선택 ${order.orderNo}`}
@@ -3008,6 +3027,9 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                 </table>
               </div>
             </div>
+            {searchingOrders && <OrderSearch orders={recentOrders} years={orderYears} yearOf={getOrderYear} statusOf={getProjectStatus}
+              filters={orderSearchFilters} onFilters={setOrderSearchFilters} onOpen={openSearchedOrder}
+              onOpenProject={order => { setSearchingOrders(false); openProject(order.id) }} onClose={() => setSearchingOrders(false)} />}
           </section>
         )}
 

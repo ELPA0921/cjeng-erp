@@ -2483,3 +2483,16 @@ tbody tr.selected-row:hover td {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* 수주 검색 window: the 지출 검색 layout with the 수주대장 columns */
+.order-search-results th:nth-child(1) { width: 64px; }
+.order-search-results th:nth-child(2) { width: 84px; }
+.order-search-results th:nth-child(3) { width: 108px; }
+.order-search-results th:nth-child(4) { width: 76px; }
+.order-search-results th:nth-child(5) { width: 80px; }
+.order-search-results th:nth-child(6) { width: 18%; }
+.order-search-results th:nth-child(7) { width: 16%; }
+.order-search-results th:nth-child(8) { width: auto; }
+.order-search-results .text-link { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.orders-table tr.order-found td { background: #eaf6f0; }
+.order-heading-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

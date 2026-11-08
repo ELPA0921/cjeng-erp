@@ -13,7 +13,7 @@ const statusChoices: CardAccountingChoice[] = ['회계반영', '강제회계반�
 // 26028 and 2026-028 sort as the same year and number.
 const orderNoKey = (orderNo: string) => /^\d{5}$/.test(orderNo.trim()) ? `20${orderNo.trim().slice(0, 2)}-${orderNo.trim().slice(2)}` : orderNo.trim()
 
-export default function CardAccountingModal({ mode, rows, entries, orders, onSubmit, onClose, onCreateOrder }: {
+export default function CardAccountingModal({ mode, rows, entries, orders, onSubmit, onClose, onCreateOrder, onRemove }: {
   mode: 'post' | 'edit'
   rows: PostingSource[]
   entries: Map<string, CardAccounting>
@@ -21,6 +21,8 @@ export default function CardAccountingModal({ mode, rows, entries, orders, onSub
   onSubmit: (inputs: CardAccountingInput[]) => Promise<string | null>
   onClose: () => void
   onCreateOrder: (onCreated: (order: Order) => void) => void
+  /** 회계반영 only: takes a row out of this posting and unticks it; it stays 미반영. */
+  onRemove?: (id: string) => void
 }) {
   const [drafts, setDrafts] = useState<Record<string, Draft>>(() => Object.fromEntries(rows.map(row => {
     const entry = entries.get(row.id)
@@ -32,6 +34,13 @@ export default function CardAccountingModal({ mode, rows, entries, orders, onSub
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const inputs = (): CardAccountingInput[] => rows.map(row => ({ row, ...drafts[row.id] }))
+  const removable = mode === 'post' && !!onRemove
+  function remove(id: string) {
+    setInvalid(current => { const next = new Set(current); next.delete(id); return next })
+    if (pickerFor === id) setPickerFor(null)
+    setError('')
+    onRemove?.(id)
+  }
   // Newest order number first; each year's 관리비 code (26000) lands after that year's 공사.
   const sortedOrders = [...adminOrders(orders), ...orders].sort((a, b) => orderNoKey(b.orderNo).localeCompare(orderNoKey(a.orderNo), 'ko-KR', { numeric: true }))
   const keyword = search.trim().toLowerCase()
@@ -73,7 +82,7 @@ export default function CardAccountingModal({ mode, rows, entries, orders, onSub
         <ModalClose onClose={onClose} disabled={saving} />
       </div>
       <div className="table-wrap card-accounting-rows">
-        <table><thead><tr><th>일자</th><th>거래처</th><th>금액</th>{mode === 'edit' && <th>상태</th>}<th>수주번호</th><th>내용</th></tr></thead>
+        <table><thead><tr><th>일자</th><th>거래처</th><th>금액</th>{mode === 'edit' && <th>상태</th>}<th>수주번호</th><th>내용</th>{removable && <th aria-label="빼기" />}</tr></thead>
           <tbody>{rows.map(row => {
             const draft = drafts[row.id]
             const needsOrder = draft.status === '회계반영'
@@ -102,6 +111,7 @@ export default function CardAccountingModal({ mode, rows, entries, orders, onSub
                 onFocus={() => { if (showingDefault) update(row.id, { memo: '' }) }}
                 onBlur={() => { if (defaultMemo && !draft.memo.trim()) update(row.id, { memo: defaultMemo }) }}
                 onChange={event => update(row.id, { memo: event.target.value })} /></td>
+              {removable && <td className="card-accounting-remove"><button type="button" className="ghost-button card-row-remove" aria-label={`${row.date} ${row.vendor || ''} 빼기`} title="이번 회계반영에서 빼기 (미반영으로 남음)" disabled={saving} onClick={() => remove(row.id)}>×</button></td>}
             </tr>
           })}</tbody>
         </table>
