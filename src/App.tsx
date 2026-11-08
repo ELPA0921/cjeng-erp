@@ -750,6 +750,8 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   const clientSuggestions = frequentVendors(orders.map(order => ({ year: getOrderYear(order), client: order.client1 }))
     .filter(({ year }) => /^\d{4}$/.test(year) && year >= '2023')
     .map(({ client }) => ({ vendor: client, source: '' as const })), frequentClientMinimum)
+  // A 공사현장 is often a company that is also some order's 수주처, so every 수주처 ever entered is suggested there.
+  const siteSuggestions = frequentVendors(orders.map(order => ({ vendor: order.client1, source: '' as const })), 1)
   const [cleaningVendors, setCleaningVendors] = useState(false)
   // 거래처명 정리 reads the tax invoice and card lists back to the first expense, but Barobill
   // holds nothing before 2026-05-01, so earlier periods are not asked for.
@@ -3165,15 +3167,12 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
               <div className="two-columns">
                 <label>
                   공사현장
-                  <input
+                  <VendorField
                     value={orderForm.region}
-                    onChange={(event) =>
-                      setOrderForm({
-                        ...orderForm,
-                        region: event.target.value,
-                      })
-                    }
+                    vendors={siteSuggestions}
+                    onChange={(region) => setOrderForm({ ...orderForm, region })}
                     placeholder="예: 경기 화성"
+                    unit="건"
                   />
                 </label>
               </div>
