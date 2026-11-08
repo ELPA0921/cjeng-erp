@@ -1,24 +1,25 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import { matchVendors, type FrequentVendor } from './vendors'
+import { foldVendor, matchVendors, type FrequentVendor } from './vendors'
 
 /**
  * 거래처 (or 수주처) input that suggests frequent names while typing, each with how often it was used
  * (in unit). Picking one by click or Enter fills it in; anything else typed is kept as is, so new
- * names can still be entered.
+ * names can still be entered. With openOnFocus an empty field lists every name as soon as it is clicked.
  */
-export default function VendorField({ value, vendors, onChange, placeholder, unit = '회' }: {
+export default function VendorField({ value, vendors, onChange, placeholder, unit = '회', openOnFocus = false }: {
   value: string
   vendors: FrequentVendor[]
   onChange: (vendor: string) => void
   placeholder?: string
   unit?: string
+  openOnFocus?: boolean
 }) {
   const input = useRef<HTMLInputElement>(null)
   const list = useRef<HTMLDivElement>(null)
   // The list shows only while the user is typing, not for a value that was already there.
   const [typing, setTyping] = useState(false)
   const [active, setActive] = useState(0)
-  const matches = typing ? matchVendors(vendors, value) : []
+  const matches = !typing ? [] : openOnFocus && !foldVendor(value) ? vendors.slice(0, 8) : matchVendors(vendors, value)
 
   // Fixed to the viewport so the modal cannot clip it; re-anchored on every render, scroll and resize.
   const open = matches.length > 0
@@ -38,6 +39,7 @@ export default function VendorField({ value, vendors, onChange, placeholder, uni
   return <>
     <input ref={input} value={value} placeholder={placeholder} aria-autocomplete="list" aria-expanded={open} autoComplete="off"
       onChange={event => { onChange(event.target.value); setTyping(true); setActive(0) }}
+      onFocus={() => { if (openOnFocus) { setTyping(true); setActive(0) } }}
       onBlur={() => setTyping(false)}
       onKeyDown={event => {
         // Keys pressed while a Korean syllable is still being composed belong to the IME.

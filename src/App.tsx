@@ -9,7 +9,7 @@ import CorporateCards from './CorporateCards'
 import TaxInvoices from './TaxInvoices'
 import VendorCleanup from './VendorCleanup'
 import VendorField from './VendorField'
-import { frequentClientMinimum, frequentVendors } from './vendors'
+import { foldVendor, frequentClientMinimum, frequentVendors } from './vendors'
 import { printExpenseSheet, sheetRowsPerPage } from './expensePrint'
 import Pager from './Pager'
 import { currentPage } from './pagination'
@@ -750,8 +750,6 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   const clientSuggestions = frequentVendors(orders.map(order => ({ year: getOrderYear(order), client: order.client1 }))
     .filter(({ year }) => /^\d{4}$/.test(year) && year >= '2023')
     .map(({ client }) => ({ vendor: client, source: '' as const })), frequentClientMinimum)
-  // A 공사현장 is often a company that is also some order's 수주처, so every 수주처 ever entered is suggested there.
-  const siteSuggestions = frequentVendors(orders.map(order => ({ vendor: order.client1, source: '' as const })), 1)
   const [cleaningVendors, setCleaningVendors] = useState(false)
   // 거래처명 정리 reads the tax invoice and card lists back to the first expense, but Barobill
   // holds nothing before 2026-05-01, so earlier periods are not asked for.
@@ -824,6 +822,12 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     note: '',
     status: '' as '' | OrderStatus,
   })
+  // 공사현장 suggests the sites the 수주처 typed above has had, most used first; (주) and spaces are
+  // ignored, so (주)진영 and 진영 are one 수주처. Without a 수주처 there is nothing to suggest.
+  const siteSuggestions = foldVendor(orderForm.client1)
+    ? frequentVendors(orders.filter(order => foldVendor(order.client1 ?? '') === foldVendor(orderForm.client1))
+      .map(order => ({ vendor: order.region ?? '', source: '' as const })), 1)
+    : []
 
   useEffect(() => {
     if (!workspaceStore) localStorage.setItem('cost-app-expenses', JSON.stringify(expenses))
@@ -3173,6 +3177,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                     onChange={(region) => setOrderForm({ ...orderForm, region })}
                     placeholder="예: 경기 화성"
                     unit="건"
+                    openOnFocus
                   />
                 </label>
               </div>
