@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { frequentVendors, matchVendors, vendorGroups } from './vendors.ts'
+import { frequentClientMinimum, frequentVendors, matchVendors, vendorGroups } from './vendors.ts'
 
 const uses = (vendor, n, source = '') => Array(n).fill({ vendor, source })
 
@@ -55,4 +55,9 @@ test('names from the tax invoice and card lists win even when no expense uses th
     ['(주)승우레이져', 13, [['(주)승우레이져', 0, '전자세금계산서'], ['승우레이져', 12, '법인카드'], ['승우 레이져', 1, '']]],
     ['(주)대상레이져', 5, [['(주)대상레이져', 0, '전자세금계산서'], ['대상레이져', 5, '']]],
   ])
+})
+
+test('수주처 are offered from three orders on', () => {
+  const uses = (vendor, count) => Array.from({ length: count }, () => ({ vendor, source: '' }))
+  assert.deepEqual(frequentVendors([...uses('한빛산업', 4), ...uses('동서화학', 3), ...uses('세림금속', 2)], frequentClientMinimum), [{ name: '한빛산업', count: 4 }, { name: '동서화학', count: 3 }])
 })

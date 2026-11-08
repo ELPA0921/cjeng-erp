@@ -2,14 +2,16 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { matchVendors, type FrequentVendor } from './vendors'
 
 /**
- * 거래처 input that suggests frequent vendors while typing. Picking one by click or Enter
- * fills it in; anything else typed is kept as is, so new vendors can still be entered.
+ * 거래처 (or 수주처) input that suggests frequent names while typing, each with how often it was used
+ * (in unit). Picking one by click or Enter fills it in; anything else typed is kept as is, so new
+ * names can still be entered.
  */
-export default function VendorField({ value, vendors, onChange, placeholder }: {
+export default function VendorField({ value, vendors, onChange, placeholder, unit = '회' }: {
   value: string
   vendors: FrequentVendor[]
   onChange: (vendor: string) => void
   placeholder?: string
+  unit?: string
 }) {
   const input = useRef<HTMLInputElement>(null)
   const list = useRef<HTMLDivElement>(null)
@@ -47,7 +49,7 @@ export default function VendorField({ value, vendors, onChange, placeholder }: {
     {open && <div ref={list} className="order-suggest vendor-suggest" role="listbox">
       {matches.map((vendor, index) => <button key={vendor.name} type="button" role="option" aria-selected={index === active} tabIndex={-1}
         onMouseDown={event => { event.preventDefault(); pick(vendor) }} onMouseEnter={() => setActive(index)}>
-        <span>{vendor.name}</span><small>{vendor.count}회</small>
+        <span>{vendor.name}</span><small>{vendor.count}{unit}</small>
       </button>)}
     </div>}
   </>

@@ -9,7 +9,7 @@ import CorporateCards from './CorporateCards'
 import TaxInvoices from './TaxInvoices'
 import VendorCleanup from './VendorCleanup'
 import VendorField from './VendorField'
-import { frequentVendors } from './vendors'
+import { frequentClientMinimum, frequentVendors } from './vendors'
 import { printExpenseSheet, sheetRowsPerPage } from './expensePrint'
 import Pager from './Pager'
 import { currentPage } from './pagination'
@@ -746,6 +746,10 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   const vendorUses = expenses.map(expense => ({ vendor: expense.vendor, source: postedExpenseIds.has(expense.id) && isTaxInvoiceKind(expense.kind) ? '전자세금계산서' as const : postedExpenseIds.has(expense.id) ? '법인카드' as const : '' as const }))
   const vendorSuggestionsSince = '2025-01-01'
   const expenseVendors = frequentVendors(vendorUses.filter((_, index) => expenses[index].date >= vendorSuggestionsSince))
+  // 수주처 with 3+ orders since 2023 are suggested in the 수주처 field.
+  const clientSuggestions = frequentVendors(orders.map(order => ({ year: getOrderYear(order), client: order.client1 }))
+    .filter(({ year }) => /^\d{4}$/.test(year) && year >= '2023')
+    .map(({ client }) => ({ vendor: client, source: '' as const })), frequentClientMinimum)
   const [cleaningVendors, setCleaningVendors] = useState(false)
   // 거래처명 정리 reads the tax invoice and card lists back to the first expense, but Barobill
   // holds nothing before 2026-05-01, so earlier periods are not asked for.
@@ -3148,15 +3152,12 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                 </label>
                 <label>
                   수주처
-                  <input
+                  <VendorField
                     value={orderForm.client1}
-                    onChange={(event) =>
-                      setOrderForm({
-                        ...orderForm,
-                        client1: event.target.value,
-                      })
-                    }
+                    vendors={clientSuggestions}
+                    onChange={(client1) => setOrderForm({ ...orderForm, client1 })}
                     placeholder="예: 한빛산업"
+                    unit="건"
                   />
                 </label>
               </div>

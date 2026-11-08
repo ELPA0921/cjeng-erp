@@ -20,6 +20,8 @@ export type VendorGroup = { key: string; spellings: VendorSpelling[]; target: st
 
 /** A vendor needs this many expenses before it is offered for autocomplete or 거래처명 정리. */
 export const frequentVendorMinimum = 5
+/** A 수주처 needs this many orders in 수주대장 before it is offered while typing one. */
+export const frequentClientMinimum = 3
 
 /** "(주)승우레이져", "승우 레이져" and "승우레이져" all fold to the same search text. */
 export const foldVendor = (text: string) => text
@@ -61,12 +63,12 @@ function foldedGroups(uses: VendorUse[], official: OfficialVendor[] = []) {
 }
 
 /**
- * Vendors used at least frequentVendorMinimum times, most used first. Each spelling is counted and
- * offered on its own, so (주)승우레이져 and 승우레이져 both appear; 거래처명 정리 merges them.
+ * Vendors used at least minimum times, most used first. Each spelling is counted and offered on its
+ * own, so (주)승우레이져 and 승우레이져 both appear; 거래처명 정리 merges them.
  */
-export function frequentVendors(uses: VendorUse[]): FrequentVendor[] {
+export function frequentVendors(uses: VendorUse[], minimum = frequentVendorMinimum): FrequentVendor[] {
   return tallySpellings(uses)
-    .filter(spelling => spelling.count >= frequentVendorMinimum)
+    .filter(spelling => spelling.count >= minimum)
     .map(({ name, count }) => ({ name, count }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ko-KR'))
 }
