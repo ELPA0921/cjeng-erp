@@ -45,7 +45,7 @@ export async function readWorkspaceRows(sql: Sql): Promise<WorkspaceSnapshot> {
   const data = Object.fromEntries(workspaceCollections.map(name => [name, [] as unknown[]])) as Record<string, unknown>
   for (const row of records) (data[String(row.collection)] as unknown[] | undefined)?.push(row.data)
   const stored = new Map(settings.map(row => [String(row.key), row.data]))
-  for (const name of workspaceSettings) data[name] = stored.get(name) ?? (name === 'vendorEdits' ? {} : name === 'customVendorContacts' ? { purchase: [], order: [] } : [])
+  for (const name of workspaceSettings) data[name] = stored.get(name) ?? (name === 'vendorEdits' || name === 'estimateSettings' ? {} : name === 'customVendorContacts' ? { purchase: [], order: [] } : [])
   return { data: data as WorkspaceData, revision: String(meta.revision), initialized: meta.initialized === true }
 }
 

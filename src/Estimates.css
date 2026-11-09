@@ -1,0 +1,153 @@
+/* 견적산출 */
+.estimates-view { display: grid; gap: 18px; min-width: 0; }
+.est-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.est-tabs button small { margin-left: 6px; padding: 1px 6px; border-radius: 5px; background: #ffffffa0; font-size: 10px; }
+.est-heading { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.est-heading > div:first-child { flex: 1 1 320px; max-width: 640px; }
+.est-actions { display: flex; flex: 0 0 auto; gap: 8px; align-items: center; }
+.est-search { min-width: 220px; min-height: 38px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 8px; }
+.est-actions select { min-height: 38px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: #fff; }
+.est-message { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0; padding: 10px 14px; border: 1px solid #cfe5d8; border-radius: 10px; background: #eef7f1; color: #24543d; font-size: 13px; font-weight: 600; }
+.est-callout { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin: 0 0 16px; padding: 14px 16px; border: 1px dashed #b9d3c4; border-radius: 12px; background: #f6faf7; font-size: 13px; line-height: 1.6; }
+.est-callout p { margin: 0; }
+.est-empty { padding: 26px 0; color: var(--text-subtle); text-align: center; font-size: 13px; }
+
+.est-scroll { overflow-x: auto; }
+.est-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.est-table th { padding: 8px 8px; border-bottom: 1px solid var(--line-strong); background: var(--surface-muted); color: var(--text-muted); font-weight: 700; text-align: left; white-space: nowrap; }
+.est-table td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.est-table .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.est-table .strong { font-weight: 750; color: var(--text); }
+.est-table .muted { color: var(--text-subtle); }
+.est-title-cell { max-width: 320px; }
+.est-row-actions { display: flex; gap: 5px; justify-content: flex-end; white-space: nowrap; }
+.est-sub { display: block; color: var(--text-subtle); font-size: 10.5px; }
+.est-tag { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 5px; background: #e8eef9; color: #34507a; font-size: 10.5px; font-style: normal; font-weight: 700; }
+.est-tag.warn { background: #fdf1dc; color: #8a5a10; }
+.est-note { max-width: 260px; color: var(--text-muted); font-size: 11.5px; }
+.est-note.warn { color: #8a5a10; }
+.est-marked { color: #b4540c; }
+.est-grade { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.est-grade-gen { background: #eef1f4; color: #3d4b59; }
+.est-grade-sts { background: #e3eef9; color: #1f4f80; }
+
+/* Editor */
+.est-editor { display: grid; gap: 14px; min-width: 0; }
+.est-editor-bar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 16px; }
+.est-no { font-size: 15px; letter-spacing: -.2px; }
+.est-spacer { flex: 1; }
+.est-segment { display: inline-flex; padding: 3px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface-muted); }
+.est-segment button { min-height: 30px; padding: 0 16px; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); font-weight: 700; cursor: pointer; }
+.est-segment button.active { background: #fff; color: var(--accent-strong); box-shadow: 0 1px 3px #1b292425; }
+.est-editor-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.est-editor-main { display: grid; gap: 14px; min-width: 0; }
+.est-info-grid, .est-form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.est-info-grid label, .est-form-grid label, .est-kg-grid label { display: grid; gap: 5px; font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.est-info-grid .wide { grid-column: span 2; }
+.est-info-grid .full, .est-form-grid .full, .est-kg-grid .full { grid-column: 1 / -1; }
+.est-info-grid input, .est-info-grid select, .est-info-grid textarea, .est-form-grid input, .est-form-grid select, .est-kg-grid input { width: 100%; min-height: 36px; padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 7px; font: inherit; font-size: 13px; font-weight: 500; color: var(--text); background: #fff; box-sizing: border-box; }
+.est-info-grid textarea { resize: vertical; }
+.est-bulk { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; font-weight: 700; color: var(--text-muted); }
+.est-bulk small { font-weight: 500; color: var(--text-subtle); }
+
+.est-section { padding: 16px 18px; }
+.est-section-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.est-section-no { font-weight: 800; color: var(--accent-strong); }
+.est-section-name { flex: 1 1 220px; min-height: 36px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 7px; font: inherit; font-size: 14px; font-weight: 750; }
+.est-misc { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.est-misc input { width: 52px; min-height: 32px; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 6px; text-align: right; }
+.est-section-sum { font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.est-section-actions { display: flex; gap: 8px; margin-top: 10px; }
+.est-add-section { justify-self: start; }
+.est-lines th { text-align: center; }
+.est-lines td { padding: 4px 4px; }
+.est-lines input, .est-lines select { width: 100%; min-width: 0; min-height: 30px; padding: 0 6px; border: 1px solid transparent; border-radius: 5px; background: #f7faf8; font: inherit; font-size: 12.5px; color: var(--text); box-sizing: border-box; }
+.est-lines input:hover, .est-lines select:hover { border-color: var(--line-strong); }
+.est-lines input:focus, .est-lines select:focus { border-color: var(--accent); background: #fff; outline: none; }
+.est-lines td:nth-child(1) input { min-width: 150px; }
+.est-lines td:nth-child(2) input { min-width: 130px; }
+.est-lines .est-unit { width: 52px; }
+.est-lines .est-qty { width: 60px; text-align: right; }
+.est-lines .est-money { width: 96px; text-align: right; }
+.est-lines select { width: 62px; }
+.est-markup-input { width: 54px; text-align: right; min-height: 30px; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 6px; }
+.est-lines .est-markup-input.marked { color: #b4540c; font-weight: 750; }
+.est-line-actions { white-space: nowrap; }
+.est-line-actions button { width: 24px; height: 26px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--text-subtle); cursor: pointer; font-size: 14px; }
+.est-line-actions button:hover:not(:disabled) { background: var(--surface-soft); color: var(--text); }
+.est-line-actions button:disabled { opacity: .3; cursor: default; }
+.est-misc-row td { color: var(--text-muted); font-size: 12px; padding: 7px 10px; }
+
+.est-rates summary { cursor: pointer; font-weight: 750; font-size: 14px; }
+.est-rates summary small { margin-left: 8px; font-weight: 500; color: var(--text-subtle); font-size: 11.5px; }
+.est-rates[open] summary { margin-bottom: 14px; }
+.est-rates-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px 16px; margin-bottom: 12px; }
+.est-rates-grid label { display: grid; gap: 4px; font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.est-rate-input { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.est-rate-input small { color: var(--text-subtle); font-weight: 500; white-space: nowrap; }
+.est-rate-input input { width: 70px; min-height: 32px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 6px; text-align: right; }
+.est-check { display: flex !important; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--text); }
+.est-check input { width: auto !important; min-height: 0 !important; }
+
+.est-summary { order: -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 36px; padding: 18px 22px; }
+.est-summary > h3, .est-summary > h4 { grid-row: 1; }
+.est-summary > dl { grid-column: 1; grid-row: 2; }
+.est-summary > .est-sheet { grid-column: 2; grid-row: 2; }
+.est-summary h3 { margin: 0 0 4px; font-size: 15px; }
+.est-summary h4 { margin: 0 0 4px; font-size: 15px; }
+.est-summary dl { display: grid; grid-template-columns: 1fr auto; gap: 8px 10px; margin: 0; font-size: 12.5px; }
+.est-summary dt { color: var(--text-muted); }
+.est-summary dd { margin: 0; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.est-summary .sep { padding-top: 8px; border-top: 1px solid var(--line); }
+.est-summary .total { padding-top: 10px; border-top: 2px solid var(--accent); color: var(--accent-strong); font-size: 15px; font-weight: 800; }
+.est-summary .total small { font-size: 10.5px; font-weight: 500; color: var(--text-subtle); }
+.est-summary .profit { color: #1d6a4a; font-weight: 750; }
+.est-summary dd.profit small { margin-left: 4px; padding: 1px 6px; border-radius: 5px; background: #e2f2ea; font-size: 11px; }
+.est-sheet { width: 100%; border-collapse: collapse; font-size: 12px; }
+.est-sheet th { padding: 5px 0; color: var(--text-muted); font-weight: 500; text-align: left; }
+.est-sheet td { padding: 5px 0; text-align: right; font-variant-numeric: tabular-nums; }
+.est-sheet tr.total th, .est-sheet tr.total td { border-top: 1px solid var(--line); font-weight: 750; color: var(--text); }
+
+.est-picker { width: min(980px, 100%); display: grid; gap: 14px; }
+.est-picker-filters { display: flex; gap: 8px; }
+.est-picker-filters input { flex: 1 1 auto; width: auto; min-width: 0; min-height: 38px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 8px; }
+.est-picker-filters select { flex: 0 0 180px; width: 180px; min-height: 38px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; }
+.est-picker-list { max-height: 52vh; overflow-y: auto; }
+.est-pick-row { cursor: pointer; }
+.est-pick-row:hover, .est-pick-row:focus { background: #eef7f1; outline: none; }
+.est-item-form { width: min(760px, 100%); }
+.est-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 16px 0; }
+.est-pricing { display: flex; gap: 18px; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.est-pricing legend { padding: 0 4px; font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.est-hint { margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--surface-muted); font-size: 12.5px; color: var(--text-muted); }
+
+.est-settings { display: grid; gap: 4px; }
+.est-kg-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.est-gap { margin-top: 22px; }
+.est-saved { margin-right: auto; color: var(--accent); font-size: 13px; font-weight: 700; }
+
+@media (max-width: 900px) {
+  .est-summary { grid-template-columns: minmax(0, 1fr); }
+  .est-summary > * { grid-column: 1 !important; grid-row: auto !important; }
+}
+@media (max-width: 760px) {
+  .est-info-grid, .est-kg-grid, .est-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .est-info-grid .wide { grid-column: auto; }
+  .est-callout { flex-direction: column; align-items: flex-start; }
+  .est-actions { flex-wrap: wrap; flex: 1 1 100%; }
+}
+.est-table td { white-space: nowrap; }
+.est-table td.est-note, .est-table td.est-title-cell { white-space: normal; min-width: 180px; }
+.est-actions button, .est-row-actions button { white-space: nowrap; }
+.est-lines td { white-space: nowrap; }
+
+/* The app's tables keep a 920px minimum for its wide lists; these size themselves. */
+.estimates-view table { min-width: 0; }
+.estimates-view .est-lines { min-width: 1120px; }
+.estimates-view th, .estimates-view td { font-size: 12.5px; }
+.est-bar-total { display: flex; gap: 14px; align-items: baseline; font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.est-bar-total strong { color: var(--accent-strong); font-size: 15px; font-variant-numeric: tabular-nums; }
+.est-bar-total em { font-style: normal; color: #1d6a4a; font-weight: 750; }
+.est-sheet th, .est-sheet td { background: none; border-bottom: 0; padding: 4px 0; font-size: 12.5px; }
+.est-sheet th { text-align: left; font-weight: 500; color: var(--text-muted); }
+.est-summary dl dt, .est-summary dl dd { padding: 2px 0; }

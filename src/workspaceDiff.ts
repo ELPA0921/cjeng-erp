@@ -1,6 +1,6 @@
 import type { WorkspaceData } from './workspaceTypes'
 
-const collections = ['expenses', 'workLogs', 'purchases', 'deliveries', 'cardAccounting'] as const
+const collections = ['expenses', 'workLogs', 'purchases', 'deliveries', 'cardAccounting', 'estimateItems', 'estimates'] as const
 type Collection = typeof collections[number]
 export type WorkspaceOps = {
   upsert: Partial<Record<Collection, unknown[]>>
@@ -17,7 +17,7 @@ export function workspaceOps(before: WorkspaceData, patch: Partial<WorkspaceData
   for (const [key, value] of Object.entries(patch)) {
     if ((collections as readonly string[]).includes(key)) {
       const name = key as Collection
-      const previous = new Map((before[name] as { id: string }[]).map(row => [row.id, JSON.stringify(row)]))
+      const previous = new Map(((before[name] ?? []) as { id: string }[]).map(row => [row.id, JSON.stringify(row)]))
       const next = value as { id: string }[]
       const changed = next.filter(row => previous.get(row.id) !== JSON.stringify(row))
       const kept = new Set(next.map(row => row.id))

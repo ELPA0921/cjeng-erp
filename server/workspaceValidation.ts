@@ -1,4 +1,5 @@
 import { cardAccountingStatuses, type WorkspaceData } from '../src/workspaceTypes.ts'
+import { costKinds, grades, steelShapes } from '../src/estimateTypes.ts'
 import { packWorkspace, unpackExpense, unpackWorkLog } from './workspaceCodec.ts'
 
 const vendorFields = ['company','contact','mobile','tel','fax','email','address','item']
@@ -53,8 +54,70 @@ function keys(value: unknown) {
   if (!Array.isArray(value) || value.length>20000) throw new Error('거래처 상태를 확인하세요.')
   return [...new Set(value.map(item=>text(item,true)))]
 }
-export const workspaceCollections = ['expenses', 'workLogs', 'purchases', 'deliveries', 'cardAccounting'] as const
-export const workspaceSettings = ['inactiveVendorKeys', 'deletedVendorKeys', 'vendorEdits', 'customVendorContacts'] as const
+function finite(value: unknown, label: string) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || Math.abs(value) > 1e15) throw new Error(`${label} 숫자를 확인하세요.`)
+  return value
+}
+function rates(value: unknown) {
+  const row = object(value)
+  const result: Record<string, number | boolean> = {}
+  for (const field of ['industrialAccident', 'employment', 'health', 'pension', 'longTermCare', 'retirement', 'safety', 'environment', 'otherExpense', 'overhead', 'profit']) result[field] = finite(row[field], '원가계산서 요율')
+  result.overheadIncludesExpense = row.overheadIncludesExpense === true
+  return result
+}
+function estimateItems(value: unknown) {
+  const items = records(value ?? [], ['category', 'name', 'spec', 'unit', 'kind', 'shape', 'vendor', 'priceDate', 'note'], ['kgPerUnit', 'costGeneral', 'costStainless', 'expense', 'markup'], ['name', 'kind', 'markup'], [])
+  for (const item of items) {
+    if (!(costKinds as readonly string[]).includes(String(item.kind)) || (item.shape !== undefined && !(steelShapes as readonly string[]).includes(String(item.shape)))) throw new Error('단가표 항목을 확인하세요.')
+    if (!String(item.name).trim()) throw new Error('단가표 품명을 확인하세요.')
+    if (item.priceDate) day(item.priceDate)
+  }
+  return items
+}
+function estimates(value: unknown) {
+  return rows(value ?? []).map(row => {
+    if (JSON.stringify(row).length > 500000) throw new Error('견적서가 너무 큽니다.')
+    const result: Record<string, unknown> = {}
+    for (const field of ['id', 'no', 'title', 'client', 'date', 'paymentTerms', 'supplyPeriod', 'delivery', 'validity', 'remarks', 'grade', 'updatedAt']) result[field] = text(row[field], field === 'id')
+    day(result.date)
+    if (!(grades as readonly string[]).includes(String(result.grade))) throw new Error('견적서 구분(일반/스텐)을 확인하세요.')
+    result.roundTo = finite(row.roundTo, '절사 단위')
+    result.rates = rates(row.rates)
+    if (!Array.isArray(row.sections) || row.sections.length > 200) throw new Error('견적서 구간을 확인하세요.')
+    result.sections = row.sections.map(item => {
+      const section = object(item)
+      if (!Array.isArray(section.lines) || section.lines.length > 2000) throw new Error('견적서 품목을 확인하세요.')
+      return {
+        id: text(section.id, true), name: text(section.name), miscRate: finite(section.miscRate, '잡자재비'),
+        lines: section.lines.map(entry => {
+          const line = object(entry)
+          if (!(grades as readonly string[]).includes(String(line.grade))) throw new Error('견적서 품목의 일반/스텐을 확인하세요.')
+          return {
+            id: text(line.id, true), ...(line.itemId !== undefined ? { itemId: text(line.itemId) } : {}),
+            name: text(line.name), spec: text(line.spec), unit: text(line.unit), grade: line.grade,
+            qty: finite(line.qty, '수량'), matCost: finite(line.matCost, '재료비'), labCost: finite(line.labCost, '노무비'), expCost: finite(line.expCost, '경비'), markup: finite(line.markup, '배율'),
+          }
+        }),
+      }
+    })
+    return result
+  })
+}
+function estimateSettings(value: unknown) {
+  if (value === undefined || value === null) return {}
+  const row = object(value)
+  const result: Record<string, unknown> = {}
+  if (row.kgPrices !== undefined) {
+    const prices = object(row.kgPrices)
+    result.kgPrices = Object.fromEntries(grades.flatMap(grade => steelShapes.map(shape => [`${grade}${shape}`, finite(prices[`${grade}${shape}`], 'kg 단가')])))
+  }
+  if (row.rates !== undefined) result.rates = rates(row.rates)
+  if (row.kgNote !== undefined) result.kgNote = text(row.kgNote)
+  return result
+}
+
+export const workspaceCollections = ['expenses', 'workLogs', 'purchases', 'deliveries', 'cardAccounting', 'estimateItems', 'estimates'] as const
+export const workspaceSettings = ['inactiveVendorKeys', 'deletedVendorKeys', 'vendorEdits', 'customVendorContacts', 'estimateSettings'] as const
 export type WorkspaceCollection = typeof workspaceCollections[number]
 export type WorkspaceSetting = typeof workspaceSettings[number]
 
@@ -88,6 +151,8 @@ export function validateCollection(name: WorkspaceCollection, value: unknown) {
     for (const row of deliveries) for (const field of ['client','company','address','specification','airflow','note']) row[field] ??= ''
     return deliveries
   }
+  if (name === 'estimateItems') return estimateItems(value)
+  if (name === 'estimates') return estimates(value)
   // Older shared snapshots predate card accounting, so a missing list means nothing has been posted yet.
   const cardAccounting=records(value ?? [],['status','orderNo','memo','expenseId','updatedAt'],[],['status','orderNo','memo','updatedAt'],[])
   for (const row of cardAccounting) if (!(cardAccountingStatuses as readonly string[]).includes(String(row.status))) throw new Error('회계반영 상태를 확인하세요.')
@@ -96,6 +161,7 @@ export function validateCollection(name: WorkspaceCollection, value: unknown) {
 
 export function validateSetting(name: WorkspaceSetting, value: unknown) {
   if (name === 'inactiveVendorKeys' || name === 'deletedVendorKeys') return keys(value)
+  if (name === 'estimateSettings') return estimateSettings(value)
   if (name === 'vendorEdits') {
     const edits=object(value)
     if (Object.keys(edits).length>20000) throw new Error('거래처 수정 자료가 너무 많습니다.')
