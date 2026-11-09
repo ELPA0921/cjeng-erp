@@ -2506,4 +2506,3 @@ tbody tr.selected-row:hover td {
 .order-search-results .text-link { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .orders-table tr.order-found td { background: #eaf6f0; }
 .order-heading-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.two-columns > .form-full-row { grid-column: 1 / -1; }

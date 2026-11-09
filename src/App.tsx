@@ -3909,19 +3909,6 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                         placeholder="카드번호"
                       />
                     </label>
-                    <label className="form-full-row">
-                      비고
-                      <input
-                        value={expenseForm.note}
-                        onChange={(event) =>
-                          setExpenseForm({
-                            ...expenseForm,
-                            note: event.target.value,
-                          })
-                        }
-                        placeholder="인쇄 시 비고란에 표시"
-                      />
-                    </label>
                   </div>
                   <div className="three-columns amount-fields">
                     <label>
@@ -4017,6 +4004,19 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                         })
                       }
                       placeholder="사용 내역"
+                    />
+                  </label>
+                  <label>
+                    비고
+                    <input
+                      value={expenseForm.note}
+                      onChange={(event) =>
+                        setExpenseForm({
+                          ...expenseForm,
+                          note: event.target.value,
+                        })
+                      }
+                      placeholder="인쇄 시 비고란에 표시"
                     />
                   </label>
                   <div className="modal-actions">
