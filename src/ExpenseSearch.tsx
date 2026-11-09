@@ -13,7 +13,7 @@ const amountOf = (text: string) => { const digits = text.replace(/[^\d-]/g, '');
 /**
  * 지출 검색: looks through the expenses of every 공사 and every year's 관리비 at once, for
  * "where did we buy that 동파이프컷터?". Every filled condition must match; the keyword's
- * words may each appear in 거래처, 내용 or 카드번호. Picking a result opens it in 지출내역.
+ * words may each appear in 거래처, 내용, 카드번호 or 비고. Picking a result opens it in 지출내역.
  */
 export default function ExpenseSearch({ expenses, orders, scope, kinds, kindOf, filters, onFilters, onOpen, onClose }: {
   /** The expenses to look through: every 공사 after 2022, or the 22년 이전 ones. */
@@ -49,7 +49,7 @@ export default function ExpenseSearch({ expenses, orders, scope, kinds, kindOf, 
     if (filters.kind && kindOf(expense.kind) !== filters.kind) return false
     if (min !== null && expense.amount < min) return false
     if (max !== null && expense.amount > max) return false
-    const text = fold([expense.vendor, expense.memo, expense.cardNumber ?? ''].join(' '))
+    const text = fold([expense.vendor, expense.memo, expense.cardNumber ?? '', expense.note ?? ''].join(' '))
     if (!keyword.every(word => text.includes(word))) return false
     if (projectWords.length) {
       const { orderNo, name, client } = project(expense.projectId)
@@ -67,7 +67,7 @@ export default function ExpenseSearch({ expenses, orders, scope, kinds, kindOf, 
         <ModalClose onClose={onClose} />
       </div>
       <form className="expense-search-form" onSubmit={event => event.preventDefault()}>
-        <label className="wide">검색어<input autoFocus type="search" value={filters.keyword} placeholder="거래처·내용·카드번호" onChange={event => set({ keyword: event.target.value })} /></label>
+        <label className="wide">검색어<input autoFocus type="search" value={filters.keyword} placeholder="거래처·내용·카드번호·비고" onChange={event => set({ keyword: event.target.value })} /></label>
         <label className="wide">공사<input type="search" value={filters.project} placeholder="수주번호·공사명·발주처" onChange={event => set({ project: event.target.value })} /></label>
         <label>시작일<input type="date" value={filters.from} onChange={event => set({ from: event.target.value })} /></label>
         <label>종료일<input type="date" value={filters.to} onChange={event => set({ to: event.target.value })} /></label>

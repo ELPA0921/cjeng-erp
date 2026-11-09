@@ -62,7 +62,7 @@ export type WorkspaceSetting = typeof workspaceSettings[number]
 export function validateCollection(name: WorkspaceCollection, value: unknown) {
   if (name === 'expenses') {
     const rows = Array.isArray(value) ? value.map(unpackExpense) : value
-    const expenses=records(rows,['projectId','date','kind','vendor','category','memo','cardNumber'],['supplyAmount','vatAmount','amount','sequence'],['projectId','date','kind','vendor','memo','amount'],['date'])
+    const expenses=records(rows,['projectId','date','kind','vendor','category','memo','cardNumber','note'],['supplyAmount','vatAmount','amount','sequence'],['projectId','date','kind','vendor','memo','amount'],['date'])
     for (const expense of expenses) if (expense.kind === '세금계산서') expense.kind = '전자세금계산서'
     return expenses
   }

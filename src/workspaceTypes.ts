@@ -10,6 +10,8 @@ export type Expense = {
   category?: string
   memo: string
   cardNumber?: string
+  /** 비고: printed in the 지출내역서's 비고 column. */
+  note?: string
   supplyAmount?: number
   vatAmount?: number
   amount: number

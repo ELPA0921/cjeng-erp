@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { packWorkspace } from './workspaceCodec.ts'
-import { validateWorkspace } from './workspaceValidation.ts'
+import { packWorkspace, unpackExpense } from './workspaceCodec.ts'
+import { validateCollection, validateWorkspace } from './workspaceValidation.ts'
 
 const log = { id:'w1', projectId:'work-unassigned', date:'2023-01-05', worker:'작업자', workerType:'인력', startTime:'07:30', endTime:'11:30', overtimeHours:0, location:'인천공장', task:'배관 보수', note:'원본 공사 보존', hours:4 }
 const data = { expenses:[], workLogs:[log], purchases:[], deliveries:[], inactiveVendorKeys:[], deletedVendorKeys:[], vendorEdits:{}, customVendorContacts:{purchase:[],order:[]}, cardAccounting:[] }
@@ -47,4 +47,11 @@ test('a 발주 및 견적 현황 line may leave its dates and amount blank, but 
   assert.deepEqual(validateWorkspace({ ...data, purchases:[{ id:'p2', projectId:'o-1', amount:1000 }] }).purchases, [{ id:'p2', projectId:'o-1', amount:1000, quoteDate:'', orderDate:'', completedDate:'', vendor:'', manager:'', item:'', note:'' }])
   assert.throws(() => validateWorkspace({ ...data, purchases:[{ ...quote, orderDate:'23.04.25' }] }))
   assert.throws(() => validateWorkspace({ ...data, purchases:[{ ...quote, amount:'1,000' }] }))
+})
+
+test('an expense 비고 survives packing, unpacking and validation', () => {
+  const expense = { id: 'e1', projectId: 'p1', date: '2026-11-09', kind: '법인카드', vendor: '다일전기', memo: '전선', amount: 1100, note: '학운점' }
+  const [row] = packWorkspace({ expenses: [expense], workLogs: [] }).expenses
+  assert.deepEqual(unpackExpense(row), expense)
+  assert.deepEqual(validateCollection('expenses', [row]), [expense])
 })

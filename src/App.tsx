@@ -97,6 +97,7 @@ type ExpenseSortKey =
   | 'vendor'
   | 'memo'
   | 'cardNumber'
+  | 'note'
   | 'supplyAmount'
   | 'vatAmount'
   | 'amount'
@@ -792,6 +793,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     vendor: '',
     memo: '',
     cardNumber: '',
+    note: '',
     supplyAmount: '',
     vatAmount: '',
     amount: '',
@@ -991,7 +993,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
             ? getExpenseSupplyAmount(a)
             : expenseSort.key === 'vatAmount'
               ? getExpenseVatAmount(a)
-              : String(a[expenseSort.key])
+              : String(a[expenseSort.key] ?? '')
       const bValue =
         expenseSort.key === 'amount'
           ? b.amount
@@ -999,7 +1001,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
             ? getExpenseSupplyAmount(b)
             : expenseSort.key === 'vatAmount'
               ? getExpenseVatAmount(b)
-              : String(b[expenseSort.key])
+              : String(b[expenseSort.key] ?? '')
       const result =
         expenseSort.key === 'amount' ||
         expenseSort.key === 'supplyAmount' ||
@@ -1287,7 +1289,8 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
         memo: expense.memo,
         supplyAmount: getExpenseSupplyAmount(expense),
         cardNumber: personal ? '개인카드' : expense.cardNumber ?? '',
-        note: personal ? expense.cardNumber ?? '' : '',
+        // A personal card's owner comes first, then the row's own 비고.
+        note: [personal ? expense.cardNumber : '', expense.note].filter(Boolean).join(' '),
       }
     }),
   )
@@ -1302,6 +1305,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
       '금액',
       '구분',
       '카드번호',
+      '비고',
     ],
     rows: filteredExpenses.map((expense) => [
       expense.date,
@@ -1312,6 +1316,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
       formatNumber(expense.amount),
       normalizeExpenseKind(expense.kind),
       expense.cardNumber || '-',
+      expense.note ?? '',
     ]),
     totals:
       filteredExpenses.length > 0
@@ -1323,6 +1328,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
               formatNumber(expenseTotals.supplyAmount),
               formatNumber(expenseTotals.vatAmount),
               formatNumber(expenseTotals.amount),
+              '',
               '',
               '',
             ],
@@ -1659,6 +1665,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
           vendor: getCsvValue(record, ['거래처']),
           memo: getCsvValue(record, ['내용']),
           cardNumber: getCsvValue(record, ['카드번호']),
+          note: getCsvValue(record, ['비고']) || undefined,
           supplyAmount,
           vatAmount,
           amount,
@@ -2050,6 +2057,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
       vendor: expense.vendor,
       memo: expense.memo,
       cardNumber: expense.cardNumber ?? '',
+      note: expense.note ?? '',
       supplyAmount: String(getExpenseSupplyAmount(expense)),
       vatAmount: String(getExpenseVatAmount(expense)),
       amount: String(expense.amount),
@@ -2091,6 +2099,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
       vendor: '',
       memo: '',
       cardNumber: '',
+      note: '',
       supplyAmount: '',
       vatAmount: '',
       amount: '',
@@ -2123,6 +2132,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
       vendor: '',
       memo: '',
       cardNumber: '',
+      note: '',
       supplyAmount: '',
       vatAmount: '',
       amount: '',
@@ -2211,6 +2221,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                 vendor: expenseForm.vendor,
                 memo: expenseForm.memo,
                 cardNumber,
+                note: expenseForm.note.trim() || undefined,
                 supplyAmount,
                 vatAmount,
                 amount,
@@ -2231,6 +2242,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
         vendor: '',
         memo: '',
         cardNumber: '',
+        note: '',
         supplyAmount: '',
         vatAmount: '',
         amount: '',
@@ -2251,6 +2263,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
         vendor: expenseForm.vendor,
         memo: expenseForm.memo,
         cardNumber,
+        note: expenseForm.note.trim() || undefined,
         supplyAmount,
         vatAmount,
         amount,
@@ -2266,6 +2279,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
       vendor: '',
       memo: '',
       cardNumber: '',
+      note: '',
       supplyAmount: '',
       vatAmount: '',
       amount: '',
@@ -3412,6 +3426,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                           <th>{renderExpenseSortButton('amount', '금액')}</th>
                           <th>{renderExpenseSortButton('kind', '구분')}</th>
                           <th>{renderExpenseSortButton('cardNumber', '카드번호')}</th>
+                          <th>{renderExpenseSortButton('note', '비고')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -3431,11 +3446,12 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                             </td>
                             <td>{normalizeExpenseKind(expense.kind)}</td>
                             <td>{expense.cardNumber || '-'}</td>
+                            <td className="expense-note" title={expense.note}>{expense.note || ''}</td>
                           </tr>
                         ))}
                         {filteredExpenses.length === 0 && (
                           <tr>
-                            <td colSpan={8}>등록된 지출내역이 없습니다.</td>
+                            <td colSpan={9}>등록된 지출내역이 없습니다.</td>
                           </tr>
                         )}
                       </tbody>
@@ -3452,7 +3468,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                             <td className="numeric-cell">
                               {formatNumber(expenseTotals.amount)}
                             </td>
-                            <td colSpan={2}></td>
+                            <td colSpan={3}></td>
                           </tr>
                         </tfoot>
                       )}
@@ -3710,6 +3726,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                     <col className="expenses-col-amount" />
                     <col className="expenses-col-kind" />
                     <col className="expenses-col-card" />
+                    <col className="expenses-col-note" />
                   </colgroup>
                   <thead>
                     <tr>
@@ -3731,6 +3748,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                       <th>{renderExpenseSortButton('amount', '금액')}</th>
                       <th>{renderExpenseSortButton('kind', '구분')}</th>
                       <th>{renderExpenseSortButton('cardNumber', '카드번호')}</th>
+                          <th>{renderExpenseSortButton('note', '비고')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3760,6 +3778,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                           {normalizeExpenseKind(expense.kind)}
                         </td>
                         <td className="expense-center">{expense.cardNumber || '-'}</td>
+                        <td className="expense-center expense-note" title={expense.note}>{expense.note || ''}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -3776,7 +3795,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                         <td className="numeric-cell">
                           {formatNumber(expenseTotals.amount)}
                         </td>
-                        <td colSpan={2}></td>
+                        <td colSpan={3}></td>
                       </tr>
                     </tfoot>
                   )}
@@ -3888,6 +3907,19 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                           })
                         }
                         placeholder="카드번호"
+                      />
+                    </label>
+                    <label className="form-full-row">
+                      비고
+                      <input
+                        value={expenseForm.note}
+                        onChange={(event) =>
+                          setExpenseForm({
+                            ...expenseForm,
+                            note: event.target.value,
+                          })
+                        }
+                        placeholder="인쇄 시 비고란에 표시"
                       />
                     </label>
                   </div>
