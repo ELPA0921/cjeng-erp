@@ -4,7 +4,7 @@ import {validateWorkspace} from './workspaceValidation.ts'
 import {createWorkspaceHandler} from '../api/workspace.ts'
 import {sameOrigin} from './security.ts'
 const origin='https://workspace.example.test'
-const empty=()=>({expenses:[],workLogs:[],purchases:[],inactiveVendorKeys:[],deletedVendorKeys:[],vendorEdits:{},customVendorContacts:{purchase:[],order:[]},deliveries:[],cardAccounting:[],estimateItems:[],estimates:[],estimateSettings:{}})
+const empty=()=>({expenses:[],workLogs:[],purchases:[],inactiveVendorKeys:[],deletedVendorKeys:[],vendorEdits:{},customVendorContacts:{purchase:[],order:[]},deliveries:[],cardAccounting:[],estimateItems:[],estimates:[],materialQuotes:[],estimateSettings:{}})
 const data=()=>({...empty(),expenses:[{id:'e',projectId:'p',date:'2026-10-22',kind:'법인카드',vendor:'거래처',memo:'',amount:1100,supplyAmount:1000,vatAmount:100}],workLogs:[{id:'w',projectId:'p',date:'2026-10-22',worker:'직원',workerType:'직원',startTime:'07:30',endTime:'16:30',location:'',task:'작업',note:'',hours:8,overtimeHours:0}]})
 const req=(body,method='PUT')=>({method,headers:{origin,'content-type':'application/json'},body})
 const res=()=>({statusCode:200,setHeader(){},end(value){this.body=JSON.parse(value)}})

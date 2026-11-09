@@ -31,6 +31,42 @@ export type EstimateItem = {
   /** 단가 기준일 (YYYY-MM-DD or blank). */
   priceDate: string
   note: string
+  /** Latest 업체 견적 price per grade, filled in from 자재비용 when read; never stored. */
+  quoted?: Partial<Record<Grade, QuotedPrice>>
+}
+
+export type QuotedPrice = { price: number; vendor: string; date: string; quoteId: string }
+
+/** 공통: one price for both 일반 and 스텐 (labor, equipment, parts that are the same either way). */
+export const quoteGrades = ['일반', '스텐', '공통'] as const
+export type QuoteGrade = typeof quoteGrades[number]
+
+/** One line of a quote received from a vendor. */
+export type MaterialQuoteLine = {
+  id: string
+  /** The 단가표 item it prices; set when the quote is saved. */
+  itemId?: string
+  category: string
+  name: string
+  spec: string
+  unit: string
+  kind: CostKind
+  grade: QuoteGrade
+  qty?: number
+  price: number
+  note: string
+}
+
+/** A quote received from a vendor (자재비용). Its prices become the 단가표's 원가. */
+export type MaterialQuote = {
+  id: string
+  date: string
+  vendor: string
+  /** 견적번호 or file name, for finding the paper. */
+  quoteNo: string
+  memo: string
+  lines: MaterialQuoteLine[]
+  updatedAt: string
 }
 
 /** 원가계산서 rates in percent. */

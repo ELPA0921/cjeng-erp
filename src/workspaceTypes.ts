@@ -1,6 +1,6 @@
 import type { VendorContact } from './vendorData.ts'
 import type { Delivery } from './deliveryData.ts'
-import type { Estimate, EstimateItem, EstimateSettings } from './estimateTypes.ts'
+import type { Estimate, EstimateItem, EstimateSettings, MaterialQuote } from './estimateTypes.ts'
 
 export type Expense = {
   id: string
@@ -74,10 +74,12 @@ export type WorkspaceData = {
   /** 견적산출: 원가 단가표, 견적서, and the kg prices and 원가계산서 rates. Older snapshots have none. */
   estimateItems?: EstimateItem[]
   estimates?: Estimate[]
+  /** 자재비용: quotes received from vendors, whose prices feed the 단가표. */
+  materialQuotes?: MaterialQuote[]
   estimateSettings?: Partial<EstimateSettings>
 }
 export type WorkspaceSnapshot = { data: WorkspaceData; revision: string; initialized: boolean; mode?: 'rows' }
 export type SharedWorkspaceStore = WorkspaceSnapshot & {
   save: (patch: Partial<WorkspaceData>, revision: string) => Promise<boolean>
 }
-export const emptyWorkspace = (): WorkspaceData => ({expenses:[],workLogs:[],purchases:[],inactiveVendorKeys:[],deletedVendorKeys:[],vendorEdits:{},customVendorContacts:{purchase:[],order:[]},deliveries:[],cardAccounting:[],estimateItems:[],estimates:[],estimateSettings:{}})
+export const emptyWorkspace = (): WorkspaceData => ({expenses:[],workLogs:[],purchases:[],inactiveVendorKeys:[],deletedVendorKeys:[],vendorEdits:{},customVendorContacts:{purchase:[],order:[]},deliveries:[],cardAccounting:[],estimateItems:[],estimates:[],materialQuotes:[],estimateSettings:{}})

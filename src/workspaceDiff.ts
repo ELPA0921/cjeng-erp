@@ -1,6 +1,6 @@
 import type { WorkspaceData } from './workspaceTypes'
 
-const collections = ['expenses', 'workLogs', 'purchases', 'deliveries', 'cardAccounting', 'estimateItems', 'estimates'] as const
+const collections = ['expenses', 'workLogs', 'purchases', 'deliveries', 'cardAccounting', 'estimateItems', 'estimates', 'materialQuotes'] as const
 type Collection = typeof collections[number]
 export type WorkspaceOps = {
   upsert: Partial<Record<Collection, unknown[]>>

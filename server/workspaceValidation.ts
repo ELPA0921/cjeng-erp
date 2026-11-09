@@ -1,5 +1,5 @@
 import { cardAccountingStatuses, type WorkspaceData } from '../src/workspaceTypes.ts'
-import { costKinds, grades, steelShapes } from '../src/estimateTypes.ts'
+import { costKinds, grades, quoteGrades, steelShapes } from '../src/estimateTypes.ts'
 import { packWorkspace, unpackExpense, unpackWorkLog } from './workspaceCodec.ts'
 
 const vendorFields = ['company','contact','mobile','tel','fax','email','address','item']
@@ -115,8 +115,28 @@ function estimateSettings(value: unknown) {
   if (row.kgNote !== undefined) result.kgNote = text(row.kgNote)
   return result
 }
+function materialQuotes(value: unknown) {
+  return rows(value ?? []).map(row => {
+    if (JSON.stringify(row).length > 500000) throw new Error('업체 견적이 너무 큽니다.')
+    const result: Record<string, unknown> = {}
+    for (const field of ['id', 'date', 'vendor', 'quoteNo', 'memo', 'updatedAt']) result[field] = text(row[field], field === 'id')
+    day(result.date)
+    if (!Array.isArray(row.lines) || row.lines.length > 2000) throw new Error('업체 견적 품목을 확인하세요.')
+    result.lines = row.lines.map(entry => {
+      const line = object(entry)
+      if (!(quoteGrades as readonly string[]).includes(String(line.grade)) || !(costKinds as readonly string[]).includes(String(line.kind))) throw new Error('업체 견적 품목의 구분을 확인하세요.')
+      if (!text(line.name).trim()) throw new Error('업체 견적 품명을 확인하세요.')
+      return {
+        id: text(line.id, true), ...(line.itemId !== undefined ? { itemId: text(line.itemId) } : {}),
+        category: text(line.category), name: text(line.name), spec: text(line.spec), unit: text(line.unit), kind: line.kind, grade: line.grade,
+        ...(line.qty !== undefined ? { qty: finite(line.qty, '수량') } : {}), price: finite(line.price, '단가'), note: text(line.note),
+      }
+    })
+    return result
+  })
+}
 
-export const workspaceCollections = ['expenses', 'workLogs', 'purchases', 'deliveries', 'cardAccounting', 'estimateItems', 'estimates'] as const
+export const workspaceCollections = ['expenses', 'workLogs', 'purchases', 'deliveries', 'cardAccounting', 'estimateItems', 'estimates', 'materialQuotes'] as const
 export const workspaceSettings = ['inactiveVendorKeys', 'deletedVendorKeys', 'vendorEdits', 'customVendorContacts', 'estimateSettings'] as const
 export type WorkspaceCollection = typeof workspaceCollections[number]
 export type WorkspaceSetting = typeof workspaceSettings[number]
@@ -153,6 +173,7 @@ export function validateCollection(name: WorkspaceCollection, value: unknown) {
   }
   if (name === 'estimateItems') return estimateItems(value)
   if (name === 'estimates') return estimates(value)
+  if (name === 'materialQuotes') return materialQuotes(value)
   // Older shared snapshots predate card accounting, so a missing list means nothing has been posted yet.
   const cardAccounting=records(value ?? [],['status','orderNo','memo','expenseId','updatedAt'],[],['status','orderNo','memo','updatedAt'],[])
   for (const row of cardAccounting) if (!(cardAccountingStatuses as readonly string[]).includes(String(row.status))) throw new Error('회계반영 상태를 확인하세요.')

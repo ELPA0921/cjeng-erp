@@ -1,4 +1,4 @@
-export const navigationViews = ['home', 'orders', 'project', 'dashboard', 'expenses', 'adminExpenses', 'legacyExpenses', 'taxInvoices', 'corporateCards', 'worklogs', 'worklogList', 'deliveries', 'contacts', 'orderContacts', 'estimates'] as const
+export const navigationViews = ['home', 'orders', 'project', 'dashboard', 'expenses', 'adminExpenses', 'legacyExpenses', 'taxInvoices', 'corporateCards', 'worklogs', 'worklogList', 'deliveries', 'contacts', 'orderContacts', 'estimateCosts', 'estimates'] as const
 export type NavigationRoute = {
   view: typeof navigationViews[number]
   projectId: string

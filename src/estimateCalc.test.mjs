@@ -87,3 +87,60 @@ test('견적번호 takes the next free number of the day', () => {
   assert.equal(nextEstimateNo('2026-11-09', []), '261109-01A')
   assert.equal(nextEstimateNo('2026-11-09', ['261109-01A', '261109-02A']), '261109-03A')
 })
+
+test('업체 견적 prices override the 단가표; the latest 견적일 wins and 공통 sets both grades', async () => {
+  const { withQuotes, itemUnitCost } = await import('./estimateCalc.ts')
+  const quote = (id, date, lines) => ({ id, date, vendor: `업체${id}`, quoteNo: '', memo: '', updatedAt: date, lines })
+  const line = (itemId, grade, price) => ({ id: `${itemId}${price}`, itemId, category: '', name: '', spec: '', unit: '', kind: '재료비', grade, price, note: '' })
+  const items = withQuotes([plate, welder], [
+    quote('b', '2026-09-01', [line('plate', '스텐', 4500)]),
+    quote('a', '2026-05-01', [line('plate', '스텐', 5200), line('plate', '일반', 1500)]),
+    quote('c', '2026-10-01', [line('welder', '공통', 320000)]),
+  ])
+  assert.equal(itemUnitCost(items[0], '스텐', settings), 4500)
+  assert.equal(items[0].quoted.스텐.vendor, '업체b')
+  assert.equal(itemUnitCost(items[0], '일반', settings), 1500)
+  assert.equal(itemUnitCost(items[1], '일반', settings), 320000)
+  assert.equal(itemUnitCost(items[1], '스텐', settings), 320000)
+})
+
+test('saving a quote links lines to the same 품명·규격·단위 or adds a new item once', async () => {
+  const { linkQuote } = await import('./estimateCalc.ts')
+  let n = 0
+  const lines = [
+    { id: '1', category: '판재·형강', name: 'ANGLE', spec: '50 × 50 × 6T', unit: 'm', kind: '재료비', grade: '스텐', price: 30000, note: '' },
+    { id: '2', category: '기기류', name: '터보팬', spec: '150CMM', unit: 'SET', kind: '재료비', grade: '공통', price: 6000000, note: '' },
+    { id: '3', category: '기기류', name: '터보팬', spec: '150CMM', unit: 'set', kind: '재료비', grade: '일반', price: 5000000, note: '' },
+  ]
+  const { quote, added } = linkQuote({ id: 'q', date: '2026-11-09', vendor: '대영풍력', quoteNo: '', memo: '', updatedAt: '', lines }, [angle], () => `new${++n}`)
+  assert.equal(quote.lines[0].itemId, 'angle')
+  assert.equal(quote.lines[1].itemId, 'new1')
+  assert.equal(quote.lines[2].itemId, 'new1')
+  assert.deepEqual(added.map(item => [item.name, item.vendor, item.priceDate]), [['터보팬', '대영풍력', '2026-11-09']])
+})
+
+test('rows pasted from a vendor’s Excel quote become lines', async () => {
+  const { parsePastedLines } = await import('./estimateCalc.ts')
+  const rows = parsePastedLines([
+    'NO\t품 명\t규 격\t단위\t수량\t단 가\t금 액',
+    '1\t스텐판\t4*8*1.5T\tSHEET\t2\t160,000\t320,000',
+    '2\t스텐스파이럴 닥트\tΦ125*4M\t본\t8\t150,000\t1,200,000',
+    '\t실리콘패킹\t1000*2000*10T\tSHEET\t2\t220,000\t440,000',
+    '레이져모형가공\t\tSET\t6\t150,000',
+    'STEEL PLATE\t12t\tKG\t1,309\t1,309,000',
+    '\t\t\t\t합계\t5,350,000',
+  ].join('\n'))
+  assert.deepEqual(rows.map(row => [row.name, row.spec, row.unit, row.qty, row.price, row.grade]), [
+    ['스텐판', '4*8*1.5T', 'SHEET', 2, 160000, '스텐'],
+    ['스텐스파이럴 닥트', 'Φ125*4M', '본', 8, 150000, '스텐'],
+    ['실리콘패킹', '1000*2000*10T', 'SHEET', 2, 220000, '일반'],
+    ['레이져모형가공', '', 'SET', 6, 150000, '일반'],
+    ['STEEL PLATE', '12t', 'KG', 1000, 1309, '일반'],
+  ])
+})
+
+test('pasted labour and transport lines go to 노무비 and 경비 for both grades', async () => {
+  const { parsePastedLines } = await import('./estimateCalc.ts')
+  const rows = parsePastedLines(['기공\t\t인\t4\t280,000\t1,120,000', '카고크레인 운반\t5톤\t대\t1\t450,000', '스텐판\t4*8*1T\tSHEET\t1\t120,000'].join('\n'))
+  assert.deepEqual(rows.map(row => [row.name, row.kind, row.grade]), [['기공', '노무비', '공통'], ['카고크레인 운반', '경비', '공통'], ['스텐판', '재료비', '스텐']])
+})

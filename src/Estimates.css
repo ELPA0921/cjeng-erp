@@ -151,3 +151,29 @@
 .est-sheet th, .est-sheet td { background: none; border-bottom: 0; padding: 4px 0; font-size: 12.5px; }
 .est-sheet th { text-align: left; font-weight: 500; color: var(--text-muted); }
 .est-summary dl dt, .est-summary dl dd { padding: 2px 0; }
+
+/* 자재비용 · 업체 견적 */
+.est-quoted { color: #1d6a4a; font-weight: 700; }
+.est-tag.new { background: #e3f4ea; color: #1d6a4a; }
+.est-quote-form { width: min(1240px, 100%); display: grid; gap: 12px; }
+.est-history { width: min(860px, 100%); display: grid; gap: 12px; }
+.est-quote-head { display: grid; grid-template-columns: minmax(180px, 1.2fr) 150px minmax(140px, 1fr) minmax(180px, 1.6fr); gap: 10px; }
+.est-quote-head label { display: grid; gap: 4px; font-size: 12px; font-weight: 650; color: var(--text-muted); }
+.est-quote-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.est-quote-tools small { color: var(--text-subtle); font-size: 11.5px; }
+.est-paste { display: grid; gap: 8px; padding: 10px; border: 1px dashed var(--line-strong); border-radius: 8px; background: var(--surface-soft); }
+.est-paste textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 6px; font: inherit; font-size: 12.5px; resize: vertical; }
+.est-paste-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12px; color: var(--text-muted); }
+.est-quote-form .est-scroll { max-height: 48vh; overflow: auto; }
+.estimates-view .est-quote-lines-table { min-width: 1080px; }
+.est-quote-lines-table td:nth-child(1) input { min-width: 90px; }
+.est-quote-lines-table td:nth-child(2) input { min-width: 150px; }
+.est-quote-lines-table td:nth-child(3) input { min-width: 130px; }
+.est-quote-lines-table td:nth-child(9) input { min-width: 110px; }
+.est-quote-lines-table select { width: 70px; }
+.est-lines .est-missing { border-color: #d98a2b; background: #fdf6ec; }
+.est-hint-inline { margin-right: auto; color: #8a5a10; font-size: 12px; font-weight: 600; }
+tr.est-quote-lines > td { padding: 6px 10px 12px 28px; background: var(--surface-soft); }
+@media (max-width: 760px) {
+  .est-quote-head { grid-template-columns: 1fr 1fr; }
+}

@@ -69,6 +69,11 @@ const tradeMenus = [
   ['orderContacts', '발주처'],
   ['deliveries', '납품실적'],
 ] as const
+// 견적산출: 업체 견적으로 쌓는 자재비용, and the 견적서 made from it.
+const estimateMenus = [
+  ['estimateCosts', '자재비용'],
+  ['estimates', '견적서 제작'],
+] as const
 type ProjectDetailTab = NavigationRoute['projectTab']
 type ContactTab = 'purchase' | 'order'
 type SortDirection = 'asc' | 'desc'
@@ -615,7 +620,7 @@ function getProjectStatus(order: Order) {
   return getOrderStatus(order, today)
 }
 
-type IconName = 'home' | 'orders' | 'dashboard' | 'expenses' | 'worklogs' | 'deliveries' | 'contacts' | 'estimates' | 'arrow' | 'plus'
+type IconName = 'home' | 'orders' | 'dashboard' | 'expenses' | 'worklogs' | 'deliveries' | 'contacts' | 'estimateCosts' | 'arrow' | 'plus'
 function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, string> = {
     home: 'M3 10 12 3l9 7M5 9v12h5v-7h4v7h5V9',
@@ -625,7 +630,7 @@ function Icon({ name }: { name: IconName }) {
     worklogs: 'M4 5h16v16H4zM8 3v4M16 3v4M4 11h16M8 15h2M14 15h2',
     deliveries: 'M3 4h12v13H3zM15 9h4l3 4v4h-7M5 17a2 2 0 1 0 4 0M16 17a2 2 0 1 0 4 0M3 8h12',
     contacts: 'M16 21v-3a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v3M9 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8M17 3a4 4 0 0 1 0 8M22 21v-3a4 4 0 0 0-3-3.87',
-    estimates: 'M6 3h12v18H6zM9 6.5h6v3.5H9zM9 14h.01M12 14h.01M15 14h.01M9 17.5h.01M12 17.5h.01M15 17.5h.01',
+    estimateCosts: 'M6 3h12v18H6zM9 6.5h6v3.5H9zM9 14h.01M12 14h.01M15 14h.01M9 17.5h.01M12 17.5h.01M15 17.5h.01',
     arrow: 'M5 12h14M13 6l6 6-6 6',
     plus: 'M12 5v14M5 12h14',
   }
@@ -2384,10 +2389,10 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
         <nav className="nav-tabs" aria-label="주요 메뉴">
           {([
             ['home', '홈'], ['orders', '수주대장'], ['dashboard', '공사현황'],
-            ['expenses', '지출내역'], ['worklogs', '작업일보'], ['contacts', '거래관리'], ['estimates', '견적산출'],
+            ['expenses', '지출내역'], ['worklogs', '작업일보'], ['contacts', '거래관리'], ['estimateCosts', '견적산출'],
           ] as const).map(([target, label]) => {
             // 지출내역 and 거래관리 open their sub-menu while one of their screens is shown.
-            const menus = target === 'expenses' ? expenseMenus : target === 'contacts' ? tradeMenus : null
+            const menus = target === 'expenses' ? expenseMenus : target === 'contacts' ? tradeMenus : target === 'estimateCosts' ? estimateMenus : null
             const inGroup = view === target || (target === 'worklogs' && view === 'worklogList') || !!menus?.some(([screen]) => screen === view)
             return <Fragment key={target}>
             <button className={inGroup ? 'active' : ''}
@@ -2415,7 +2420,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
         <header className="topbar">
           <div>
             <p className="eyebrow">
-              {expenseMenus.some(([screen]) => screen === view) ? '지출내역' : tradeMenus.some(([screen]) => screen === view) ? '거래관리' : view === 'estimates' ? '견적산출' : view === 'home'
+              {expenseMenus.some(([screen]) => screen === view) ? '지출내역' : tradeMenus.some(([screen]) => screen === view) ? '거래관리' : estimateMenus.some(([screen]) => screen === view) ? '견적산출' : view === 'home'
                 ? '홈'
                 : view === 'orders'
                 ? '수주대장'
@@ -2430,7 +2435,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                         : '작업일보'}
             </p>
             <h2>
-              {view === 'taxInvoices' ? '전자세금계산서 조회' : view === 'corporateCards' ? '법인카드 조회' : view === 'estimates' ? '견적 산출' : tradeMenus.find(([screen]) => screen === view)?.[1] ?? (view === 'home'
+              {view === 'taxInvoices' ? '전자세금계산서 조회' : view === 'corporateCards' ? '법인카드 조회' : view === 'estimateCosts' ? '자재비용' : view === 'estimates' ? '견적서 제작' : tradeMenus.find(([screen]) => screen === view)?.[1] ?? (view === 'home'
                 ? '전체 현황'
                 : view === 'orders'
                 ? `${orderYear}년 수주대장`
@@ -2500,7 +2505,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                   {workLogListYear === 'all' ? '전체년도' : `${workLogListYear}년`}
                 </span>
               </>
-            ) : view === 'worklogs' || view === 'taxInvoices' || view === 'corporateCards' || view === 'estimates' ? null : (
+            ) : view === 'worklogs' || view === 'taxInvoices' || view === 'corporateCards' || view === 'estimates' || view === 'estimateCosts' ? null : (
               <>
                 <span>{selectedProject?.orderNo}</span>
                 <span>{selectedProject?.client1}</span>
@@ -2531,7 +2536,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
           />}
 
         {view === 'deliveries' && <DeliveryPerformance workspaceStore={workspaceStore} />}
-        {view === 'estimates' && <Estimates workspaceStore={workspaceStore} />}
+        {(view === 'estimateCosts' || view === 'estimates') && <Estimates workspaceStore={workspaceStore} screen={view === 'estimateCosts' ? 'costs' : 'estimates'} vendors={expenseVendors} onOpenCosts={() => navigateTo('estimateCosts')} />}
         {view === 'home' && (
           <section className="home-view">
             <section className="home-grid">

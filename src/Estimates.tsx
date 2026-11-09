@@ -1,16 +1,19 @@
 import { useMemo, useState } from 'react'
 import ModalClose from './ModalClose'
-import { estimateTotals, itemGrade, itemHasGrade, itemUnitCost, lineAmounts, lineFromItem, nextEstimateNo, quoted, regradeLine, sectionAmounts } from './estimateCalc'
+import { estimateTotals, itemGrade, itemHasGrade, itemKey, itemUnitCost, lineAmounts, lineFromItem, linkQuote, nextEstimateNo, parsePastedLines, quoted, regradeLine, sectionAmounts, withQuotes } from './estimateCalc'
 import { downloadEstimate } from './estimateExcel'
 import { seedItems } from './estimateSeed'
-import { costKinds, grades, itemCategories, normalizeSettings, steelShapes, type CostRates, type Estimate, type EstimateItem, type EstimateLine, type EstimateSection, type EstimateSettings, type Grade } from './estimateTypes'
+import { costKinds, grades, itemCategories, normalizeSettings, quoteGrades, steelShapes, type CostRates, type Estimate, type EstimateItem, type EstimateLine, type EstimateSection, type EstimateSettings, type Grade, type MaterialQuote, type MaterialQuoteLine } from './estimateTypes'
+import VendorField from './VendorField'
+import type { FrequentVendor } from './vendors'
 import type { SharedWorkspaceStore, WorkspaceData } from './workspaceTypes'
 import './Estimates.css'
 
-type Patch = Pick<WorkspaceData, 'estimateItems' | 'estimates' | 'estimateSettings'>
-type Tab = 'estimates' | 'items' | 'settings'
+type Patch = Pick<WorkspaceData, 'estimateItems' | 'estimates' | 'materialQuotes' | 'estimateSettings'>
+type CostTab = 'quotes' | 'items' | 'kg'
+type EstimateTab = 'estimates' | 'rates'
 
-const storageKeys = { estimateItems: 'cost-app-estimate-items', estimates: 'cost-app-estimates', estimateSettings: 'cost-app-estimate-settings' } as const
+const storageKeys = { estimateItems: 'cost-app-estimate-items', estimates: 'cost-app-estimates', materialQuotes: 'cost-app-material-quotes', estimateSettings: 'cost-app-estimate-settings' } as const
 function readLocal<T>(key: string, fallback: T): T {
   try { const raw = localStorage.getItem(key); return raw === null ? fallback : JSON.parse(raw) as T } catch { return fallback }
 }
@@ -38,16 +41,28 @@ function NumberInput({ value, onChange, placeholder, className, label }: { value
     onBlur={() => setText(null)} />
 }
 
-export default function Estimates({ workspaceStore }: { workspaceStore?: SharedWorkspaceStore }) {
+export default function Estimates({ workspaceStore, screen, vendors, onOpenCosts }: {
+  workspaceStore?: SharedWorkspaceStore
+  /** 자재비용 (업체 견적 → 단가) or 견적서 제작. */
+  screen: 'costs' | 'estimates'
+  /** 거래처 names suggested in the 업체 field. */
+  vendors: FrequentVendor[]
+  onOpenCosts: () => void
+}) {
   const [local, setLocal] = useState(() => ({
     estimateItems: readLocal<EstimateItem[]>(storageKeys.estimateItems, []),
     estimates: readLocal<Estimate[]>(storageKeys.estimates, []),
+    materialQuotes: readLocal<MaterialQuote[]>(storageKeys.materialQuotes, []),
     estimateSettings: readLocal<Partial<EstimateSettings>>(storageKeys.estimateSettings, {}),
   }))
   const items = workspaceStore?.data.estimateItems ?? local.estimateItems
   const estimates = workspaceStore?.data.estimates ?? local.estimates
+  const quotes = workspaceStore?.data.materialQuotes ?? local.materialQuotes
   const settings = normalizeSettings(workspaceStore ? workspaceStore.data.estimateSettings : local.estimateSettings)
-  const [tab, setTab] = useState<Tab>('estimates')
+  // The 단가표 as estimates see it: each item with its latest 업체 견적 price.
+  const priced = useMemo(() => withQuotes(items, quotes), [items, quotes])
+  const [costTab, setCostTab] = useState<CostTab>('quotes')
+  const [estimateTab, setEstimateTab] = useState<EstimateTab>('estimates')
   const [openId, setOpenId] = useState<string | null>(null)
   const [message, setMessage] = useState('')
 
@@ -73,7 +88,7 @@ export default function Estimates({ workspaceStore }: { workspaceStore?: SharedW
       grade: '일반', roundTo: 100000, rates: { ...settings.rates }, updatedAt: new Date().toISOString(),
       sections: [{ id: newId('sec'), name: '제작', miscRate: 3, lines: [] }],
     }
-    void save({ estimates: [estimate, ...estimates] }).then(saved => { if (saved) { setOpenId(estimate.id); setTab('estimates') } })
+    void save({ estimates: [estimate, ...estimates] }).then(saved => { if (saved) { setOpenId(estimate.id); setEstimateTab('estimates') } })
   }
   function copyEstimate(source: Estimate) {
     const date = today()
@@ -88,22 +103,47 @@ export default function Estimates({ workspaceStore }: { workspaceStore?: SharedW
     if (!window.confirm(`견적서 ${target.no} "${target.title || '건명 없음'}"을(를) 삭제할까요? 되돌릴 수 없습니다.`)) return
     void save({ estimates: estimates.filter(row => row.id !== target.id) })
   }
+  /** Saves a vendor quote, linking each line to its 단가표 item (adding new items as needed). */
+  async function saveQuote(quote: MaterialQuote) {
+    const { quote: linked, added } = linkQuote({ ...quote, updatedAt: new Date().toISOString() }, items, () => newId('item'))
+    const next = quotes.some(row => row.id === quote.id) ? quotes.map(row => row.id === quote.id ? linked : row) : [linked, ...quotes]
+    const saved = await save({ materialQuotes: next, ...(added.length ? { estimateItems: [...items, ...added] } : {}) })
+    if (saved) setMessage(`${quote.vendor} 견적(${quote.date}) 품목 ${quote.lines.length}개를 저장했습니다.${added.length ? ` 단가표에 없던 품목 ${added.length}개를 새로 추가했습니다.` : ''}`)
+    return saved
+  }
+  function deleteQuote(target: MaterialQuote) {
+    if (!window.confirm(`${target.vendor} 견적(${target.date}, 품목 ${target.lines.length}개)을 지울까요? 이 견적에서 온 단가는 단가표에서 이전 견적이나 기본 단가로 돌아갑니다. 이미 만든 견적서 금액은 바뀌지 않습니다.`)) return
+    void save({ materialQuotes: quotes.filter(row => row.id !== target.id) })
+  }
+
+  const tabs = screen === 'costs'
+    ? ([['quotes', '업체 견적', quotes.length], ['items', '품목별 단가', items.length], ['kg', 'kg 단가', undefined]] as const)
+    : ([['estimates', '견적서', estimates.length], ['rates', '원가계산서 요율', undefined]] as const)
+  const activeTab = screen === 'costs' ? costTab : estimateTab
+  function selectTab(key: string) {
+    setMessage('')
+    if (screen === 'costs') setCostTab(key as CostTab)
+    else { setEstimateTab(key as EstimateTab); setOpenId(null) }
+  }
 
   return <section className="estimates-view">
-    <nav className="contact-tabs est-tabs" aria-label="견적산출 메뉴">
-      {([['estimates', '견적서'], ['items', '원가 단가표'], ['settings', 'kg 단가·요율 기준']] as const).map(([key, label]) =>
-        <button key={key} type="button" className={tab === key ? 'active' : ''} aria-current={tab === key ? 'page' : undefined}
-          onClick={() => { setTab(key); setOpenId(null); setMessage('') }}>{label}{key === 'items' && <small>{items.length}</small>}</button>)}
+    <nav className="contact-tabs est-tabs" aria-label={screen === 'costs' ? '자재비용 메뉴' : '견적서 제작 메뉴'}>
+      {tabs.map(([key, label, count]) =>
+        <button key={key} type="button" className={activeTab === key ? 'active' : ''} aria-current={activeTab === key ? 'page' : undefined}
+          onClick={() => selectTab(key)}>{label}{count !== undefined && <small>{count}</small>}</button>)}
     </nav>
     {message && <p className="est-message" role="status">{message}<button type="button" className="text-link" onClick={() => setMessage('')}>닫기</button></p>}
 
-    {tab === 'estimates' && (open
-      ? <EstimateEditor key={open.id} estimate={open} items={items} settings={settings}
+    {screen === 'costs' && costTab === 'quotes' && <QuoteList quotes={quotes} items={items} vendors={vendors} onSave={saveQuote} onDelete={deleteQuote} />}
+    {screen === 'costs' && costTab === 'items' && <ItemTable items={items} priced={priced} quotes={quotes} settings={settings} onSave={next => save({ estimateItems: next })} />}
+    {screen === 'costs' && costTab === 'kg' && <SettingsForm part="kg" settings={settings} onSave={next => save({ estimateSettings: next })} />}
+
+    {screen === 'estimates' && estimateTab === 'estimates' && (open
+      ? <EstimateEditor key={open.id} estimate={open} items={priced} settings={settings}
           onSave={async next => save({ estimates: estimates.map(row => row.id === next.id ? next : row) })}
           onClose={() => setOpenId(null)} />
-      : <EstimateList estimates={estimates} itemCount={items.length} onCreate={createEstimate} onOpen={id => setOpenId(id)} onCopy={copyEstimate} onDelete={deleteEstimate} onGoItems={() => setTab('items')} />)}
-    {tab === 'items' && <ItemTable items={items} settings={settings} onSave={next => save({ estimateItems: next })} />}
-    {tab === 'settings' && <SettingsForm settings={settings} onSave={next => save({ estimateSettings: next })} />}
+      : <EstimateList estimates={estimates} itemCount={items.length} onCreate={createEstimate} onOpen={id => setOpenId(id)} onCopy={copyEstimate} onDelete={deleteEstimate} onGoItems={onOpenCosts} />)}
+    {screen === 'estimates' && estimateTab === 'rates' && <SettingsForm part="rates" settings={settings} onSave={next => save({ estimateSettings: next })} />}
   </section>
 }
 
@@ -116,13 +156,13 @@ function EstimateList({ estimates, itemCount, onCreate, onOpen, onCopy, onDelete
     .sort((a, b) => b.date.localeCompare(a.date) || b.no.localeCompare(a.no))
   return <article className="panel">
     <div className="panel-heading est-heading">
-      <div><h3>견적서 목록</h3><span>원가 단가표에서 품목을 골라 견적을 만들고, 회사 양식 엑셀(갑지·원가계산서·집계표·상세내역서)로 내려받습니다.</span></div>
+      <div><h3>견적서 목록</h3><span>자재비용의 단가표에서 품목을 골라 견적을 만들고, 회사 양식 엑셀(갑지·원가계산서·집계표·상세내역서)로 내려받습니다.</span></div>
       <div className="est-actions">
         <input className="est-search" placeholder="견적번호·고객명·건명 검색" value={search} onChange={event => setSearch(event.target.value)} aria-label="견적서 검색" />
         <button type="button" className="primary-button" onClick={onCreate}>새 견적</button>
       </div>
     </div>
-    {itemCount === 0 && <div className="est-callout"><p>원가 단가표가 비어 있습니다. 기존 견적서를 분석한 단가로 먼저 채워 두면 견적을 만들 때 골라 쓸 수 있습니다.</p><button type="button" className="ghost-button compact-button" onClick={onGoItems}>원가 단가표로 이동</button></div>}
+    {itemCount === 0 && <div className="est-callout"><p>단가표가 비어 있습니다. 자재비용에서 업체 견적을 입력하거나 분석한 단가로 시작하면, 견적을 만들 때 골라 쓸 수 있습니다.</p><button type="button" className="ghost-button compact-button" onClick={onGoItems}>자재비용으로 이동</button></div>}
     {rows.length === 0 ? <p className="est-empty">{estimates.length ? '검색 결과가 없습니다.' : '아직 만든 견적서가 없습니다. 새 견적을 눌러 시작하세요.'}</p> :
       <div className="est-scroll"><table className="est-table">
         <thead><tr><th>견적번호</th><th>작성일</th><th>고객명</th><th>건명</th><th>구분</th><th className="num">원가</th><th className="num">견적 총액</th><th className="num">예상 이익률</th><th /></tr></thead>
@@ -312,7 +352,7 @@ function EstimateEditor({ estimate, items, settings, onSave, onClose }: {
         <button type="button" className="ghost-button est-add-section" onClick={() => setDraft({ ...draft, sections: [...draft.sections, { id: newId('sec'), name: '', miscRate: 0, lines: [] }] })}>+ 구간 추가</button>
 
         <details className="panel est-rates">
-          <summary>원가계산서 요율 <small>이 견적에만 적용 · 기준값은 "kg 단가·요율 기준" 탭</small></summary>
+          <summary>원가계산서 요율 <small>이 견적에만 적용 · 기준값은 "원가계산서 요율" 탭</small></summary>
           <RatesForm rates={draft.rates} onChange={rates => update({ rates })} />
           <button type="button" className="ghost-button compact-button" onClick={() => update({ rates: { ...settings.rates } })}>기준 요율로 되돌리기</button>
         </details>
@@ -379,7 +419,7 @@ function ItemPicker({ items, settings, grade, onPick, onClose }: { items: Estima
         <input autoFocus placeholder="품명·규격·거래처 검색" value={search} onChange={event => setSearch(event.target.value)} aria-label="품목 검색" />
         <select value={category} onChange={event => setCategory(event.target.value)} aria-label="분류"><option value="">전체 분류</option>{categories.map(name => <option key={name}>{name}</option>)}</select>
       </div>
-      {items.length === 0 ? <p className="est-empty">단가표가 비어 있습니다. 원가 단가표 탭에서 먼저 품목을 넣으세요.</p> :
+      {items.length === 0 ? <p className="est-empty">단가표가 비어 있습니다. 자재비용에서 먼저 업체 견적을 입력하세요.</p> :
         <div className="est-scroll est-picker-list"><table className="est-table">
           <thead><tr><th>분류</th><th>품명</th><th>규격</th><th>단위</th><th className="num">일반 원가</th><th className="num">스텐 원가</th><th>배율</th></tr></thead>
           <tbody>{rows.map(item => {
@@ -398,17 +438,32 @@ function ItemPicker({ items, settings, grade, onPick, onClose }: { items: Estima
 const emptyItem = (): EstimateItem => ({ id: '', category: '기타', name: '', spec: '', unit: 'EA', kind: '재료비', markup: 1, vendor: '', priceDate: today(), note: '' })
 const yearAgo = () => { const date = new Date(); date.setFullYear(date.getFullYear() - 1); return date.toISOString().slice(0, 10) }
 
-function ItemTable({ items, settings, onSave }: { items: EstimateItem[]; settings: EstimateSettings; onSave: (items: EstimateItem[]) => Promise<boolean> }) {
+function ItemTable({ items, priced, quotes, settings, onSave }: {
+  /** The 단가표 as stored (what edits change). */
+  items: EstimateItem[]
+  /** The same items with their latest 업체 견적 prices (what the table shows). */
+  priced: EstimateItem[]
+  quotes: MaterialQuote[]
+  settings: EstimateSettings
+  onSave: (items: EstimateItem[]) => Promise<boolean>
+}) {
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('')
   const [editing, setEditing] = useState<EstimateItem | null>(null)
+  const [history, setHistory] = useState<EstimateItem | null>(null)
   const categories = [...new Set([...itemCategories, ...items.map(item => item.category)])]
   const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean)
-  const rows = items.filter(item => (!category || item.category === category) && words.every(word => `${item.name} ${item.spec} ${item.category} ${item.vendor} ${item.note}`.toLowerCase().includes(word)))
+  const rows = priced.filter(item => (!category || item.category === category) && words.every(word => `${item.name} ${item.spec} ${item.category} ${item.vendor} ${item.note}`.toLowerCase().includes(word)))
   const stale = yearAgo()
+  const quoteCount = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const quote of quotes) for (const line of quote.lines) if (line.itemId) counts.set(line.itemId, (counts.get(line.itemId) ?? 0) + 1)
+    return counts
+  }, [quotes])
 
   function remove(item: EstimateItem) {
-    if (!window.confirm(`단가표에서 "${item.name} ${item.spec}"을(를) 지울까요? 이미 만든 견적서의 금액은 바뀌지 않습니다.`)) return
+    const used = quoteCount.get(item.id) ?? 0
+    if (!window.confirm(`단가표에서 "${item.name} ${item.spec}"을(를) 지울까요?${used ? ` 업체 견적 ${used}줄이 이 품목을 가리키고 있어, 다음에 그 견적을 저장하면 품목이 다시 생깁니다.` : ''} 이미 만든 견적서의 금액은 바뀌지 않습니다.`)) return
     void onSave(items.filter(row => row.id !== item.id))
   }
   async function submit(item: EstimateItem) {
@@ -418,39 +473,219 @@ function ItemTable({ items, settings, onSave }: { items: EstimateItem[]; setting
 
   return <article className="panel">
     <div className="panel-heading est-heading">
-      <div><h3>원가 단가표</h3><span>업체에서 받은 견적·발주 금액(원가)을 할증 없이 넣습니다. 판재·형강은 중량 × kg 단가로 계산되어, kg 단가만 고치면 함께 바뀝니다.</span></div>
+      <div><h3>품목별 단가</h3><span>견적서에 들어가는 원가입니다. 업체 견적에 나온 품목은 가장 최근 견적일의 단가가 쓰이고(업체 견적 표시), 없으면 직접 넣은 단가나 중량 × kg 단가가 쓰입니다.</span></div>
       <div className="est-actions">
         <input className="est-search" placeholder="품명·규격·거래처 검색" value={search} onChange={event => setSearch(event.target.value)} aria-label="단가표 검색" />
         <select value={category} onChange={event => setCategory(event.target.value)} aria-label="분류"><option value="">전체 분류</option>{categories.map(name => <option key={name}>{name}</option>)}</select>
-        <button type="button" className="primary-button" onClick={() => setEditing(emptyItem())}>품목 추가</button>
+        <button type="button" className="ghost-button" onClick={() => setEditing(emptyItem())}>품목 직접 추가</button>
       </div>
     </div>
     {items.length === 0 && <div className="est-callout">
-      <p><strong>단가표가 비어 있습니다.</strong> 2024~2026년 견적서(D:\창조이엔지)에서 찾은 단가 {seedItems().length}개로 시작할 수 있습니다. 업체 견적에서 확인한 원가와, 우리 견적에서 가져와 원가 확인이 필요한 단가가 비고에 구분되어 있습니다.</p>
+      <p><strong>단가표가 비어 있습니다.</strong> 업체 견적을 입력하면 품목이 자동으로 생깁니다. 또는 2024~2026년 견적서(D:\창조이엔지)에서 찾은 단가 {seedItems().length}개로 시작할 수 있습니다. 비고에 업체 원가인지, 우리 견적에서 가져와 원가 확인이 필요한지 적혀 있습니다.</p>
       <button type="button" className="primary-button" onClick={() => void onSave(seedItems())}>분석한 단가로 시작하기</button>
     </div>}
     {items.length > 0 && <div className="est-scroll"><table className="est-table">
-      <thead><tr><th>분류</th><th>품명</th><th>규격</th><th>단위</th><th>구분</th><th className="num">일반 원가</th><th className="num">스텐 원가</th><th className="num">경비/단위</th><th>배율</th><th>거래처</th><th>기준일</th><th>비고</th><th /></tr></thead>
+      <thead><tr><th>분류</th><th>품명</th><th>규격</th><th>단위</th><th>구분</th><th className="num">일반 원가</th><th className="num">스텐 원가</th><th className="num">경비/단위</th><th>배율</th><th>최근 업체</th><th>기준일</th><th>비고</th><th /></tr></thead>
       <tbody>{rows.map(item => {
-        const weight = item.kgPerUnit && item.shape
         const check = /확인 필요/.test(item.note)
+        const latest = [item.quoted?.일반, item.quoted?.스텐].filter(Boolean).sort((a, b) => b!.date.localeCompare(a!.date))[0]
+        const vendor = latest?.vendor ?? item.vendor
+        const date = latest?.date ?? item.priceDate
+        const count = quoteCount.get(item.id) ?? 0
         return <tr key={item.id}>
           <td>{item.category}</td><td><strong>{item.name}</strong></td><td>{item.spec}</td><td>{item.unit}</td><td>{item.kind}</td>
-          {grades.map(grade => <td key={grade} className="num">{costLabel(item, grade, settings)}{weight && <small className="est-sub">{item.kgPerUnit}kg × {won(settings.kgPrices[`${grade}${item.shape!}`])}</small>}</td>)}
+          {grades.map(grade => <td key={grade} className="num">{costLabel(item, grade, settings)}{item.quoted?.[grade]
+            ? <small className="est-sub est-quoted">업체 견적</small>
+            : item.kgPerUnit && item.shape && <small className="est-sub">{item.kgPerUnit}kg × {won(settings.kgPrices[`${grade}${item.shape}`])}</small>}</td>)}
           <td className="num">{item.expense ? won(item.expense) : ''}</td>
           <td>{item.markup !== 1 ? <strong className="est-marked">{item.markup}</strong> : 1}</td>
-          <td>{item.vendor}</td>
-          <td>{item.priceDate}{item.priceDate && item.priceDate < stale && <em className="est-tag warn">1년 경과</em>}</td>
-          <td className={check ? 'est-note warn' : 'est-note'}>{item.note}</td>
+          <td>{vendor}</td>
+          <td>{date}{date && date < stale && <em className="est-tag warn">1년 경과</em>}</td>
+          <td className={check && !latest ? 'est-note warn' : 'est-note'}>{item.note}</td>
           <td className="est-row-actions">
-            <button type="button" className="ghost-button compact-button" onClick={() => setEditing(item)}>수정</button>
+            <button type="button" className="ghost-button compact-button" disabled={!count} title={count ? '이 품목이 나온 업체 견적' : '이 품목이 나온 업체 견적이 없습니다'} onClick={() => setHistory(item)}>이력{count ? ` ${count}` : ''}</button>
+            <button type="button" className="ghost-button compact-button" onClick={() => setEditing(items.find(row => row.id === item.id) ?? item)}>수정</button>
             <button type="button" className="ghost-button compact-button danger" onClick={() => remove(item)}>삭제</button>
           </td>
         </tr>
       })}</tbody>
     </table></div>}
     {editing && <ItemForm item={editing} categories={categories} settings={settings} onSubmit={submit} onClose={() => setEditing(null)} />}
+    {history && <ItemHistory item={history} quotes={quotes} onClose={() => setHistory(null)} />}
   </article>
+}
+
+/** Every vendor price an item has had, newest first. */
+function ItemHistory({ item, quotes, onClose }: { item: EstimateItem; quotes: MaterialQuote[]; onClose: () => void }) {
+  const rows = quotes.flatMap(quote => quote.lines.filter(line => line.itemId === item.id).map(line => ({ quote, line })))
+    .sort((a, b) => b.quote.date.localeCompare(a.quote.date) || b.quote.updatedAt.localeCompare(a.quote.updatedAt))
+  return <div className="modal-backdrop" role="presentation">
+    <div className="modal-panel est-history" role="dialog" aria-label="단가 이력">
+      <div className="modal-heading"><div><h3>{item.name} {item.spec}</h3><span>업체 견적 단가 이력 (최근 순). 견적서에는 일반·스텐 각각 가장 위의 단가가 쓰입니다.</span></div><ModalClose onClose={onClose} /></div>
+      <div className="est-scroll"><table className="est-table">
+        <thead><tr><th>견적일</th><th>업체</th><th>견적번호</th><th>구분</th><th>단위</th><th className="num">수량</th><th className="num">단가</th><th>비고</th></tr></thead>
+        <tbody>{rows.map(({ quote, line }) => <tr key={line.id}>
+          <td>{quote.date}</td><td>{quote.vendor}</td><td>{quote.quoteNo}</td><td>{line.grade}</td><td>{line.unit}</td>
+          <td className="num">{line.qty ?? ''}</td><td className="num strong">{won(line.price)}</td><td className="est-note">{line.note}</td>
+        </tr>)}</tbody>
+      </table></div>
+      <div className="modal-actions"><button type="button" className="primary-button" onClick={onClose}>닫기</button></div>
+    </div>
+  </div>
+}
+
+function QuoteList({ quotes, items, vendors, onSave, onDelete }: {
+  quotes: MaterialQuote[]; items: EstimateItem[]; vendors: FrequentVendor[]
+  onSave: (quote: MaterialQuote) => Promise<boolean>; onDelete: (quote: MaterialQuote) => void
+}) {
+  const [search, setSearch] = useState('')
+  const [editing, setEditing] = useState<MaterialQuote | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const rows = quotes
+    .filter(quote => words.every(word => `${quote.vendor} ${quote.quoteNo} ${quote.memo} ${quote.lines.map(line => `${line.name} ${line.spec}`).join(' ')}`.toLowerCase().includes(word)))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.updatedAt.localeCompare(a.updatedAt))
+  // Vendors from earlier quotes come first, then the frequent 거래처 from 지출내역.
+  const suggestions = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const quote of quotes) counts.set(quote.vendor, (counts.get(quote.vendor) ?? 0) + 1)
+    const fromQuotes = [...counts].map(([name, count]) => ({ name, count }))
+    return [...fromQuotes.sort((a, b) => b.count - a.count), ...vendors.filter(vendor => !counts.has(vendor.name))]
+  }, [quotes, vendors])
+
+  return <article className="panel">
+    <div className="panel-heading est-heading">
+      <div><h3>업체 견적</h3><span>업체에서 받은 견적서를 그대로 입력합니다. 저장하면 품목별 단가에 바로 반영되고, 견적서 제작에서 이 단가를 원가로 씁니다. 엑셀 견적서는 표를 복사해 붙여넣을 수 있습니다.</span></div>
+      <div className="est-actions">
+        <input className="est-search" placeholder="업체·품명·견적번호 검색" value={search} onChange={event => setSearch(event.target.value)} aria-label="업체 견적 검색" />
+        <button type="button" className="primary-button" onClick={() => setEditing({ id: newId('quote'), date: today(), vendor: '', quoteNo: '', memo: '', lines: [], updatedAt: '' })}>업체 견적 입력</button>
+      </div>
+    </div>
+    {rows.length === 0 ? <p className="est-empty">{quotes.length ? '검색 결과가 없습니다.' : '아직 입력한 업체 견적이 없습니다. 받은 견적서를 "업체 견적 입력"으로 넣어 주세요.'}</p> :
+      <div className="est-scroll"><table className="est-table">
+        <thead><tr><th>견적일</th><th>업체</th><th>견적번호</th><th>메모</th><th>품목</th><th className="num">품목 수</th><th className="num">합계 (수량 있는 줄)</th><th /></tr></thead>
+        <tbody>{rows.flatMap(quote => {
+          const total = quote.lines.reduce((sum, line) => sum + (line.qty ?? 0) * line.price, 0)
+          const open = expanded === quote.id
+          return [
+            <tr key={quote.id}>
+              <td>{quote.date}</td><td><strong>{quote.vendor}</strong></td><td>{quote.quoteNo}</td><td className="est-note">{quote.memo}</td>
+              <td className="est-note">{quote.lines.slice(0, 3).map(line => line.name).join(', ')}{quote.lines.length > 3 ? ` 외 ${quote.lines.length - 3}` : ''}</td>
+              <td className="num">{quote.lines.length}</td><td className="num">{total ? won(total) : '-'}</td>
+              <td className="est-row-actions">
+                <button type="button" className="ghost-button compact-button" aria-expanded={open} onClick={() => setExpanded(open ? null : quote.id)}>{open ? '접기' : '품목 보기'}</button>
+                <button type="button" className="ghost-button compact-button" onClick={() => setEditing(quote)}>수정</button>
+                <button type="button" className="ghost-button compact-button danger" onClick={() => onDelete(quote)}>삭제</button>
+              </td>
+            </tr>,
+            ...(open ? [<tr key={`${quote.id}-lines`} className="est-quote-lines"><td colSpan={8}>
+              <table className="est-table">
+                <thead><tr><th>분류</th><th>품명</th><th>규격</th><th>단위</th><th>구분</th><th>견적서 칸</th><th className="num">수량</th><th className="num">단가</th><th>비고</th></tr></thead>
+                <tbody>{quote.lines.map(line => <tr key={line.id}>
+                  <td>{line.category}</td><td>{line.name}</td><td>{line.spec}</td><td>{line.unit}</td><td>{line.grade}</td><td>{line.kind}</td>
+                  <td className="num">{line.qty ?? ''}</td><td className="num strong">{won(line.price)}</td><td className="est-note">{line.note}</td>
+                </tr>)}</tbody>
+              </table>
+            </td></tr>] : []),
+          ]
+        })}</tbody>
+      </table></div>}
+    {editing && <QuoteForm quote={editing} items={items} vendors={suggestions}
+      onSubmit={async quote => { if (await onSave(quote)) setEditing(null) }} onClose={() => setEditing(null)} />}
+  </article>
+}
+
+const blankLine = (): MaterialQuoteLine => ({ id: newId('qline'), category: '', name: '', spec: '', unit: 'EA', kind: '재료비', grade: '일반', price: 0, note: '' })
+
+function QuoteForm({ quote, items, vendors, onSubmit, onClose }: {
+  quote: MaterialQuote; items: EstimateItem[]; vendors: FrequentVendor[]
+  onSubmit: (quote: MaterialQuote) => void; onClose: () => void
+}) {
+  const [form, setForm] = useState<MaterialQuote>(() => quote.lines.length ? quote : { ...quote, lines: [blankLine()] })
+  const [pasting, setPasting] = useState(false)
+  const [pasted, setPasted] = useState('')
+  const [saving, setSaving] = useState(false)
+  const byKey = useMemo(() => new Map(items.map(item => [itemKey(item), item])), [items])
+  const categories = [...new Set([...itemCategories, ...items.map(item => item.category)])]
+  const nameOptions = [...new Set(items.map(item => item.name))]
+  const lines = form.lines.filter(line => line.name.trim() || line.price)
+  const invalid = lines.filter(line => !line.name.trim() || !(line.price > 0)).length
+  const valid = form.vendor.trim() && /^\d{4}-\d{2}-\d{2}$/.test(form.date) && lines.length > 0 && invalid === 0
+  const preview = pasted.trim() ? parsePastedLines(pasted) : []
+
+  const setLine = (id: string, patch: Partial<MaterialQuoteLine>) => setForm(current => ({ ...current, lines: current.lines.map(line => {
+    if (line.id !== id) return line
+    const next = { ...line, ...patch }
+    // A line that now names an existing item takes that item's 분류 and 견적서 칸, and links to it.
+    const match = byKey.get(itemKey(next))
+    return match ? { ...next, itemId: match.id, category: next.category || match.category, kind: match.kind } : { ...next, itemId: undefined }
+  }) }))
+  function addPasted() {
+    const added = preview.map(row => {
+      const match = byKey.get(itemKey(row))
+      return { ...row, id: newId('qline'), ...(match ? { itemId: match.id, category: match.category, kind: match.kind } : {}) }
+    })
+    setForm(current => ({ ...current, lines: [...current.lines.filter(line => line.name.trim() || line.price), ...added] }))
+    setPasted(''); setPasting(false)
+  }
+
+  return <div className="modal-backdrop" role="presentation">
+    <form className="modal-panel form-panel est-quote-form" onSubmit={event => {
+      event.preventDefault()
+      if (!valid || saving) return
+      setSaving(true)
+      onSubmit({ ...form, vendor: form.vendor.trim(), lines: lines.map(line => ({ ...line, name: line.name.trim(), spec: line.spec.trim(), unit: line.unit.trim() })) })
+      setSaving(false)
+    }}>
+      <div className="modal-heading"><div><h3>{quote.lines.length ? '업체 견적 수정' : '업체 견적 입력'}</h3><span>받은 견적서의 단가를 할증 없이 그대로 넣습니다. 같은 품명·규격·단위가 단가표에 있으면 그 품목의 단가가 되고, 없으면 새 품목이 생깁니다.</span></div><ModalClose onClose={onClose} /></div>
+      <div className="est-quote-head">
+        <label>업체<VendorField value={form.vendor} vendors={vendors} onChange={vendor => setForm({ ...form, vendor })} placeholder="예: 비엠아이코리아" openOnFocus /></label>
+        <label>견적일<input type="date" value={form.date} onChange={event => setForm({ ...form, date: event.target.value })} /></label>
+        <label>견적번호·파일명<input value={form.quoteNo} onChange={event => setForm({ ...form, quoteNo: event.target.value })} placeholder="예: 견적-260812-1" /></label>
+        <label>메모<input value={form.memo} onChange={event => setForm({ ...form, memo: event.target.value })} placeholder="예: CJ진천 햇반동, 운송·설치 별도" /></label>
+      </div>
+
+      <div className="est-quote-tools">
+        <button type="button" className="ghost-button compact-button" onClick={() => setPasting(!pasting)} aria-expanded={pasting}>엑셀에서 붙여넣기</button>
+        <button type="button" className="ghost-button compact-button" onClick={() => setForm({ ...form, lines: [...form.lines, blankLine()] })}>+ 줄 추가</button>
+        <small>구분 "공통"은 일반·스텐 어느 쪽 견적에도 같은 단가로 쓰입니다 (인건비, 장비, 재질과 상관없는 기기 등).</small>
+      </div>
+      {pasting && <div className="est-paste">
+        <textarea rows={5} value={pasted} onChange={event => setPasted(event.target.value)} autoFocus
+          placeholder={'업체 엑셀 견적서에서 품명부터 단가(또는 금액)까지 줄을 선택해 복사한 뒤 여기에 붙여넣으세요.\n예) 스텐판  4*8*1.5T  SHEET  2  160,000  320,000'} aria-label="엑셀에서 붙여넣기" />
+        <div className="est-paste-foot">
+          <span>{pasted.trim() ? `${preview.length}개 품목을 읽었습니다. 추가한 뒤 표에서 고칠 수 있습니다.` : '품명·규격·단위·수량·단가·금액 순서가 아니어도 숫자와 글자를 구분해 읽습니다.'}</span>
+          <button type="button" className="primary-button compact-button" disabled={!preview.length} onClick={addPasted}>{preview.length}개 추가</button>
+        </div>
+      </div>}
+
+      <datalist id="est-quote-names">{nameOptions.map(name => <option key={name} value={name} />)}</datalist>
+      <datalist id="est-quote-categories">{categories.map(name => <option key={name} value={name} />)}</datalist>
+      <div className="est-scroll">
+        <table className="est-table est-lines est-quote-lines-table">
+          <thead><tr><th>분류</th><th>품명</th><th>규격</th><th>단위</th><th>구분</th><th>견적서 칸</th><th>수량</th><th>단가 (원가)</th><th>비고</th><th>단가표</th><th /></tr></thead>
+          <tbody>{form.lines.map(line => <tr key={line.id}>
+            <td><input aria-label="분류" list="est-quote-categories" value={line.category} onChange={event => setLine(line.id, { category: event.target.value })} placeholder="기타" /></td>
+            <td><input aria-label="품명" list="est-quote-names" value={line.name} onChange={event => setLine(line.id, { name: event.target.value })} /></td>
+            <td><input aria-label="규격" value={line.spec} onChange={event => setLine(line.id, { spec: event.target.value })} /></td>
+            <td><input className="est-unit" aria-label="단위" value={line.unit} onChange={event => setLine(line.id, { unit: event.target.value })} /></td>
+            <td><select aria-label="구분" value={line.grade} onChange={event => setLine(line.id, { grade: event.target.value as MaterialQuoteLine['grade'] })}>{quoteGrades.map(grade => <option key={grade}>{grade}</option>)}</select></td>
+            <td><select aria-label="견적서 칸" value={line.kind} onChange={event => setLine(line.id, { kind: event.target.value as MaterialQuoteLine['kind'] })}>{costKinds.map(kind => <option key={kind}>{kind}</option>)}</select></td>
+            <td><NumberInput className="est-qty" label="수량" placeholder="-" value={line.qty} onChange={value => setLine(line.id, { qty: value })} /></td>
+            <td><NumberInput className={`est-money${line.name.trim() && !(line.price > 0) ? ' est-missing' : ''}`} label="단가" value={line.price || undefined} onChange={value => setLine(line.id, { price: value ?? 0 })} /></td>
+            <td><input aria-label="비고" value={line.note} onChange={event => setLine(line.id, { note: event.target.value })} /></td>
+            <td>{line.itemId ? <em className="est-tag">기존 품목</em> : line.name.trim() ? <em className="est-tag new">새 품목</em> : ''}</td>
+            <td className="est-line-actions"><button type="button" aria-label="줄 삭제" title="삭제" onClick={() => setForm({ ...form, lines: form.lines.filter(row => row.id !== line.id) })}>×</button></td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+      <div className="modal-actions">
+        {!valid && <span className="est-hint-inline">{!form.vendor.trim() ? '업체를 입력하세요.' : !lines.length ? '품목을 한 줄 이상 넣으세요.' : invalid ? `품명이나 단가가 빠진 줄이 ${invalid}개 있습니다.` : ''}</span>}
+        <button type="button" className="ghost-button" onClick={onClose}>취소</button>
+        <button type="submit" className="primary-button" disabled={!valid || saving}>저장 ({lines.length}개 품목)</button>
+      </div>
+    </form>
+  </div>
 }
 
 function ItemForm({ item, categories, settings, onSubmit, onClose }: { item: EstimateItem; categories: string[]; settings: EstimateSettings; onSubmit: (item: EstimateItem) => void; onClose: () => void }) {
@@ -458,7 +693,7 @@ function ItemForm({ item, categories, settings, onSubmit, onClose }: { item: Est
   const [byWeight, setByWeight] = useState(Boolean(item.kgPerUnit && item.shape))
   const set = (patch: Partial<EstimateItem>) => setForm(current => ({ ...current, ...patch }))
   const preview = { ...form, ...(byWeight ? { shape: form.shape ?? '판재' as const } : { kgPerUnit: undefined, shape: undefined }) }
-  const valid = form.name.trim() && form.markup > 0 && (byWeight ? (form.kgPerUnit ?? 0) > 0 : form.costGeneral !== undefined || form.costStainless !== undefined)
+  const valid = form.name.trim() && form.markup > 0 && (!byWeight || (form.kgPerUnit ?? 0) > 0)
   return <div className="modal-backdrop" role="presentation">
     <form className="modal-panel form-panel est-item-form" onSubmit={event => {
       event.preventDefault()
@@ -466,7 +701,7 @@ function ItemForm({ item, categories, settings, onSubmit, onClose }: { item: Est
       const { kgPerUnit, shape, costGeneral, costStainless, ...rest } = preview
       onSubmit({ ...rest, name: form.name.trim(), ...(byWeight ? { kgPerUnit, shape } : { ...(costGeneral !== undefined ? { costGeneral } : {}), ...(costStainless !== undefined ? { costStainless } : {}) }) })
     }}>
-      <div className="modal-heading"><div><h3>{item.id ? '단가 수정' : '단가 추가'}</h3><span>원가는 업체에서 받은 금액 그대로 넣고, 붙일 금액은 배율로 정합니다.</span></div><ModalClose onClose={onClose} /></div>
+      <div className="modal-heading"><div><h3>{item.id ? '단가 수정' : '단가 추가'}</h3><span>업체 견적 단가가 있으면 그 단가가 먼저 쓰이고, 여기 기본 단가는 업체 견적이 없을 때 쓰입니다. 붙일 금액은 배율로 정합니다.</span></div><ModalClose onClose={onClose} /></div>
       <div className="est-form-grid">
         <label>분류<input list="est-categories" value={form.category} onChange={event => set({ category: event.target.value })} /><datalist id="est-categories">{categories.map(name => <option key={name} value={name} />)}</datalist></label>
         <label>품명<input required value={form.name} onChange={event => set({ name: event.target.value })} /></label>
@@ -482,10 +717,10 @@ function ItemForm({ item, categories, settings, onSubmit, onClose }: { item: Est
         {byWeight ? <>
           <label>단위중량 (kg / {form.unit || '단위'})<NumberInput label="단위중량" value={form.kgPerUnit} onChange={value => set({ kgPerUnit: value })} /></label>
           <label>kg 단가 종류<select value={form.shape ?? '판재'} onChange={event => set({ shape: event.target.value as EstimateItem['shape'] })}>{steelShapes.map(shape => <option key={shape}>{shape}</option>)}</select></label>
-          <p className="full est-hint">일반 {costLabel(preview, '일반', settings)}원 · 스텐 {costLabel(preview, '스텐', settings)}원 (kg 단가는 기준 탭에서 바꿉니다)</p>
+          <p className="full est-hint">일반 {costLabel(preview, '일반', settings)}원 · 스텐 {costLabel(preview, '스텐', settings)}원 (kg 단가는 kg 단가 탭에서 바꿉니다)</p>
         </> : <>
-          <label>일반 원가<NumberInput label="일반 원가" placeholder="일반 없음" value={form.costGeneral} onChange={value => set({ costGeneral: value })} /></label>
-          <label>스텐 원가<NumberInput label="스텐 원가" placeholder="스텐 없음" value={form.costStainless} onChange={value => set({ costStainless: value })} /></label>
+          <label>일반 기본 단가<NumberInput label="일반 원가" placeholder="업체 견적으로만" value={form.costGeneral} onChange={value => set({ costGeneral: value })} /></label>
+          <label>스텐 기본 단가<NumberInput label="스텐 원가" placeholder="업체 견적으로만" value={form.costStainless} onChange={value => set({ costStainless: value })} /></label>
         </>}
         <label>함께 붙는 경비 (단위당)<NumberInput label="경비" placeholder="없음" value={form.expense} onChange={value => set({ expense: value })} /></label>
         <label>거래처<input value={form.vendor} onChange={event => set({ vendor: event.target.value })} /></label>
@@ -497,20 +732,23 @@ function ItemForm({ item, categories, settings, onSubmit, onClose }: { item: Est
   </div>
 }
 
-function SettingsForm({ settings, onSave }: { settings: EstimateSettings; onSave: (settings: EstimateSettings) => Promise<boolean> }) {
+function SettingsForm({ part, settings, onSave }: { part: 'kg' | 'rates'; settings: EstimateSettings; onSave: (settings: EstimateSettings) => Promise<boolean> }) {
   const [form, setForm] = useState(settings)
   const [saved, setSaved] = useState('')
   const dirty = JSON.stringify(form) !== JSON.stringify(settings)
   return <article className="panel form-panel est-settings">
-    <div className="panel-heading"><div><h3>kg 단가</h3><span>판재·형강 품목은 단위중량 × 이 단가로 원가가 계산됩니다. 철강 시세가 바뀌면 여기 네 개만 고치세요.</span></div></div>
-    <div className="est-kg-grid">
-      {grades.map(grade => steelShapes.map(shape => <label key={`${grade}${shape}`}>{grade} {shape} (원/kg)
-        <NumberInput label={`${grade} ${shape}`} value={form.kgPrices[`${grade}${shape}`]} onChange={value => setForm({ ...form, kgPrices: { ...form.kgPrices, [`${grade}${shape}`]: value ?? 0 } })} />
-      </label>))}
-      <label className="full">출처·메모<input value={form.kgNote} onChange={event => setForm({ ...form, kgNote: event.target.value })} /></label>
-    </div>
-    <div className="panel-heading est-gap"><div><h3>원가계산서 기준 요율</h3><span>새 견적에 들어가는 기본값입니다(현재 값: LG화학 75CMM 2026-07 견적서). 이미 만든 견적서는 바뀌지 않습니다.</span></div></div>
-    <RatesForm rates={form.rates} onChange={rates => setForm({ ...form, rates })} />
+    {part === 'kg' ? <>
+      <div className="panel-heading"><div><h3>kg 단가</h3><span>단위중량이 있는 판재·형강 품목은, 업체 견적 단가가 없을 때 단위중량 × 이 단가로 원가가 계산됩니다. 철강 시세가 바뀌면 여기 네 개만 고치세요.</span></div></div>
+      <div className="est-kg-grid">
+        {grades.map(grade => steelShapes.map(shape => <label key={`${grade}${shape}`}>{grade} {shape} (원/kg)
+          <NumberInput label={`${grade} ${shape}`} value={form.kgPrices[`${grade}${shape}`]} onChange={value => setForm({ ...form, kgPrices: { ...form.kgPrices, [`${grade}${shape}`]: value ?? 0 } })} />
+        </label>))}
+        <label className="full">출처·메모<input value={form.kgNote} onChange={event => setForm({ ...form, kgNote: event.target.value })} /></label>
+      </div>
+    </> : <>
+      <div className="panel-heading"><div><h3>원가계산서 기준 요율</h3><span>새 견적에 들어가는 기본값입니다(현재 값: LG화학 75CMM 2026-07 견적서). 이미 만든 견적서는 바뀌지 않고, 견적서마다 따로 고칠 수 있습니다.</span></div></div>
+      <RatesForm rates={form.rates} onChange={rates => setForm({ ...form, rates })} />
+    </>}
     <div className="modal-actions">
       {saved && <span className="est-saved">{saved}</span>}
       <button type="button" className="ghost-button" disabled={!dirty} onClick={() => setForm(settings)}>되돌리기</button>

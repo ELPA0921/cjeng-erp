@@ -29,3 +29,15 @@ test('broken 견적 data is refused', () => {
   assert.throws(() => validateCollection('estimates', [estimate, estimate]), /중복/)
   assert.throws(() => validateSetting('estimateSettings', { kgPrices: { 일반판재: 1 } }), /kg 단가/)
 })
+
+test('업체 견적 pass the server checks unchanged and broken ones are refused', () => {
+  const quote = { id: 'q1', date: '2026-11-09', vendor: '대영풍력', quoteNo: '견적-261109', memo: '', updatedAt: '2026-11-09T00:00:00.000Z', lines: [
+    { id: 'l1', itemId: 'item-1', category: '기기류', name: 'TURBO FAN', spec: '150CMM', unit: 'SET', kind: '재료비', grade: '공통', qty: 1, price: 5200000, note: '' },
+    { id: 'l2', category: '판재·형강', name: 'STS PLATE', spec: '3T', unit: 'KG', kind: '재료비', grade: '스텐', price: 4300, note: '' },
+  ] }
+  assert.deepEqual(validateCollection('materialQuotes', [quote]), [quote])
+  assert.deepEqual(validateCollection('materialQuotes', undefined), [])
+  assert.throws(() => validateCollection('materialQuotes', [{ ...quote, date: '2026-13-01' }]), /날짜/)
+  assert.throws(() => validateCollection('materialQuotes', [{ ...quote, lines: [{ ...quote.lines[0], grade: 'SUS' }] }]), /구분/)
+  assert.throws(() => validateCollection('materialQuotes', [{ ...quote, lines: [{ ...quote.lines[0], price: '5,200,000' }] }]), /단가/)
+})
