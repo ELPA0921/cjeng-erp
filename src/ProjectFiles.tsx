@@ -253,7 +253,7 @@ function PurchaseOrderModal({ projectId, folder, post, store, onClose }: { proje
 
 /**
  * 사진대지: the 공사's photos laid out one by one in a grid. Several photos chosen, dropped or
- * pasted together each get their own card; ✎ edits one photo's 설명 and 날짜.
+ * pasted together each get their own tile; the × to delete one shows while the mouse is over it.
  */
 export function PhotoAlbum({ projectId, projectName, folder, store }: { projectId: string; projectName: string; folder: DriveFolder; store: ProjectFilesStore }) {
   const photos = store.files.filter(file => file.kind === 'photo')
@@ -261,7 +261,6 @@ export function PhotoAlbum({ projectId, projectName, folder, store }: { projectI
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [error, setError] = useState('')
   const [dragging, setDragging] = useState(false)
-  const [editing, setEditing] = useState<ProjectFile | null>(null)
   const ready = store.shared && store.loaded && !store.error
   const items = photos.map((photo, index) => ({ id: photo.id, title: [projectName, photo.meta.caption || photo.meta.date].filter(Boolean).join(' · '), name: [projectName, photo.meta.date, photo.meta.caption || String(index + 1)].filter(Boolean).join('_') }))
 
@@ -277,16 +276,16 @@ export function PhotoAlbum({ projectId, projectName, folder, store }: { projectI
     setProgress(null)
     if (failed.length) setError(`${failed.length}장을 올리지 못했습니다. ${failed.join(' / ')}`)
   }
-  usePastedImages(upload, ready && !editing)
+  usePastedImages(upload, ready)
   const remove = async (photo: ProjectFile) => {
     if (!window.confirm('이 사진을 삭제할까요?')) return
     try { await deleteProjectFile(photo.id); store.removed(photo.id) } catch (failure) { window.alert(message(failure)) }
   }
 
   return <div className={`photo-album${dragging ? ' dragging' : ''}`}
-    onDragOver={event => { if (!ready) return; event.preventDefault(); if (!editing) setDragging(true) }}
+    onDragOver={event => { if (!ready) return; event.preventDefault(); setDragging(true) }}
     onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false) }}
-    onDrop={event => { event.preventDefault(); setDragging(false); if (!editing) upload(imageFiles(event.dataTransfer.files)) }}>
+    onDrop={event => { event.preventDefault(); setDragging(false); upload(imageFiles(event.dataTransfer.files)) }}>
     <div className="panel-heading">
       <h3>사진대지</h3>
       <div className="files-heading-actions">
@@ -304,52 +303,9 @@ export function PhotoAlbum({ projectId, projectName, folder, store }: { projectI
         <button type="button" className="photo-open" title="새 창에서 크게 보기" onClick={() => openImageViewer(items, index)}>
           <img src={fileUrl(photo.id, true)} alt={photo.meta.caption || `${photo.meta.date} 사진`} loading="lazy" />
         </button>
-        <figcaption>
-          <span><strong>{photo.meta.caption || '설명 없음'}</strong><small>{photo.meta.date}</small></span>
-          <span className="photo-actions">
-            <button type="button" title="설명 고치기" aria-label="설명 고치기" onClick={() => setEditing(photo)}>✎</button>
-            <button type="button" title="삭제" aria-label="사진 삭제" onClick={() => remove(photo)}>×</button>
-          </span>
-        </figcaption>
+        <button type="button" className="photo-remove" title="삭제" aria-label="사진 삭제" onClick={() => remove(photo)}>×</button>
       </figure>)}
       {photos.length === 0 && <p className="files-note">아직 사진이 없습니다. 사진 올리기를 누르거나 이곳에 끌어다 놓으세요.</p>}
     </div>}
-    {editing && <PhotoModal photo={editing} store={store} onClose={() => setEditing(null)} />}
-  </div>
-}
-
-function PhotoModal({ photo, store, onClose }: { photo: ProjectFile; store: ProjectFilesStore; onClose: () => void }) {
-  const [caption, setCaption] = useState(photo.meta.caption ?? '')
-  const [date, setDate] = useState(photo.meta.date ?? '')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-
-  async function save(event: FormEvent) {
-    event.preventDefault()
-    setSaving(true)
-    setError('')
-    try {
-      store.replaced(await updateProjectFile(photo.id, { ...photo.meta, caption, date }))
-      onClose()
-    } catch (failure) { setError(message(failure)) } finally { setSaving(false) }
-  }
-
-  return <div className="modal-backdrop" role="presentation">
-    <form className="modal-panel form-panel file-group-modal" onSubmit={save}>
-      <div className="modal-heading">
-        <div><h3>사진 설명 수정</h3><span>설명과 날짜를 고칠 수 있습니다.</span></div>
-        <ModalClose onClose={onClose} disabled={saving} />
-      </div>
-      <img className="photo-modal-picture" src={fileUrl(photo.id, true)} alt={photo.meta.caption || `${photo.meta.date} 사진`} />
-      <div className="two-columns">
-        <label>설명<input value={caption} placeholder="설치 전, 배관 작업 등" autoFocus onChange={event => setCaption(event.target.value)} /></label>
-        <label>날짜<input type="date" value={date} onChange={event => setDate(event.target.value)} /></label>
-      </div>
-      {error && <p className="files-note error">{error}</p>}
-      <div className="modal-actions">
-        <button className="ghost-button" type="button" disabled={saving} onClick={onClose}>취소</button>
-        <button className="primary-button" type="submit" disabled={saving}>{saving ? '저장 중…' : '저장'}</button>
-      </div>
-    </form>
   </div>
 }
