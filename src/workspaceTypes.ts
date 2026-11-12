@@ -61,6 +61,9 @@ export type CardAccounting = {
   updatedAt: string
 }
 
+/** 연구비: one 연구 registered under a 269NN number (26901, 26902, ...). */
+export type ResearchProject = { id: string; orderNo: string; name: string }
+
 export type WorkspaceData = {
   expenses: Expense[]
   workLogs: WorkLog[]
@@ -77,9 +80,11 @@ export type WorkspaceData = {
   /** 자재비용: quotes received from vendors, whose prices feed the 단가표. */
   materialQuotes?: MaterialQuote[]
   estimateSettings?: Partial<EstimateSettings>
+  /** 연구비: the 연구 registered under 269NN numbers. Older snapshots have none. */
+  researchProjects?: ResearchProject[]
 }
 export type WorkspaceSnapshot = { data: WorkspaceData; revision: string; initialized: boolean; mode?: 'rows' }
 export type SharedWorkspaceStore = WorkspaceSnapshot & {
   save: (patch: Partial<WorkspaceData>, revision: string) => Promise<boolean>
 }
-export const emptyWorkspace = (): WorkspaceData => ({expenses:[],workLogs:[],purchases:[],inactiveVendorKeys:[],deletedVendorKeys:[],vendorEdits:{},customVendorContacts:{purchase:[],order:[]},deliveries:[],cardAccounting:[],estimateItems:[],estimates:[],materialQuotes:[],estimateSettings:{}})
+export const emptyWorkspace = (): WorkspaceData => ({expenses:[],workLogs:[],purchases:[],inactiveVendorKeys:[],deletedVendorKeys:[],vendorEdits:{},customVendorContacts:{purchase:[],order:[]},deliveries:[],cardAccounting:[],estimateItems:[],estimates:[],materialQuotes:[],estimateSettings:{},researchProjects:[]})

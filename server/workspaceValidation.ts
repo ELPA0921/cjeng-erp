@@ -136,7 +136,7 @@ function materialQuotes(value: unknown) {
   })
 }
 
-export const workspaceCollections = ['expenses', 'workLogs', 'purchases', 'deliveries', 'cardAccounting', 'estimateItems', 'estimates', 'materialQuotes'] as const
+export const workspaceCollections = ['expenses', 'workLogs', 'purchases', 'deliveries', 'cardAccounting', 'estimateItems', 'estimates', 'materialQuotes', 'researchProjects'] as const
 export const workspaceSettings = ['inactiveVendorKeys', 'deletedVendorKeys', 'vendorEdits', 'customVendorContacts', 'estimateSettings'] as const
 export type WorkspaceCollection = typeof workspaceCollections[number]
 export type WorkspaceSetting = typeof workspaceSettings[number]
@@ -174,6 +174,17 @@ export function validateCollection(name: WorkspaceCollection, value: unknown) {
   if (name === 'estimateItems') return estimateItems(value)
   if (name === 'estimates') return estimates(value)
   if (name === 'materialQuotes') return materialQuotes(value)
+  if (name === 'researchProjects') {
+    // 연구비 numbers are 269NN (26901–26999), each used once.
+    const projects=records(value ?? [],['orderNo','name'],[],['orderNo','name'],[])
+    const numbers=new Set<string>()
+    for (const row of projects) {
+      const orderNo=String(row.orderNo).trim()
+      if (!/^\d{2}9\d{2}$/.test(orderNo) || orderNo.endsWith('900') || !String(row.name).trim() || numbers.has(orderNo)) throw new Error('연구비 번호와 연구명을 확인하세요.')
+      numbers.add(orderNo)
+    }
+    return projects
+  }
   // Older shared snapshots predate card accounting, so a missing list means nothing has been posted yet.
   const cardAccounting=records(value ?? [],['status','orderNo','memo','expenseId','updatedAt'],[],['status','orderNo','memo','updatedAt'],[])
   for (const row of cardAccounting) if (!(cardAccountingStatuses as readonly string[]).includes(String(row.status))) throw new Error('회계반영 상태를 확인하세요.')

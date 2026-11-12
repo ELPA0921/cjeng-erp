@@ -22,6 +22,8 @@ import OutputMenu from './OutputMenu'
 import ExpenseSearch from './ExpenseSearch'
 import { emptyExpenseSearch } from './expenseSearchFilters'
 import OrderSearch from './OrderSearch'
+import ResearchProjectModal from './ResearchProjectModal'
+import { isResearchOrderNo, isResearchProject, researchOfYear, researchOrder, researchYear, type ResearchProject } from './researchExpenses'
 import { emptyOrderSearch } from './orderSearchFilters'
 import { moveWithinDate, newestFirstOrder } from './expenseOrder'
 import { PhotoAlbum, PurchaseOrderBoard } from './ProjectFiles'
@@ -59,6 +61,7 @@ type View = NavigationRoute['view']
 const expenseMenus = [
   ['expenses', '공사별 지출내역'],
   ['adminExpenses', '관리비 지출내역'],
+  ['researchExpenses', '연구비 지출내역'],
   ['legacyExpenses', '22년 이전 지출내역'],
   ['taxInvoices', '전자세금계산서 조회'],
   ['corporateCards', '법인카드 조회'],
@@ -498,6 +501,8 @@ function getNextOrderNo(year: string, orders: Order[]) {
       const yyyyMatch = order.orderNo.match(new RegExp(`^${year}-(\\d+)$`))
       return Number(yyMatch?.[1] ?? yyyyMatch?.[1] ?? 0)
     })
+    // 9NN belongs to 연구비 (26901, ...), so a stray one never pushes 수주 numbers there.
+    .filter((sequence) => sequence < 900)
     .reduce((max, sequence) => Math.max(max, sequence), 0)
 
   return `${prefix}${String(maxSequence + 1).padStart(3, '0')}`
@@ -749,6 +754,10 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   const workLogs = workspaceStore?.data.workLogs ?? localWorkLogs
   const purchaseOrders = workspaceStore?.data.purchases ?? defaultPurchaseOrders
   const cardAccounting = workspaceStore?.data.cardAccounting ?? localCardAccounting
+  const [localResearchProjects, setLocalResearchProjects] = useState<ResearchProject[]>(() => loadStoredData('cost-app-research-projects', []))
+  const researchProjects = workspaceStore?.data.researchProjects ?? localResearchProjects
+  // 연구비 numbers stand in for orders wherever an order number is entered (회계반영) or shown.
+  const researchOrders = researchProjects.map(researchOrder)
   // Vendors with 5+ expenses since 2025 across every project are suggested in the 거래처 field.
   // 거래처명 정리 looks at every year and also reads where each name came from, so the tax
   // invoice and card spellings are kept.
@@ -784,6 +793,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     if(patch.vendorEdits)setLocalVendorEdits(patch.vendorEdits)
     if(patch.customVendorContacts)setLocalCustomVendorContacts(patch.customVendorContacts)
     if(patch.cardAccounting){setLocalCardAccounting(patch.cardAccounting);localStorage.setItem('cost-app-card-accounting',JSON.stringify(patch.cardAccounting))}
+    if(patch.researchProjects){setLocalResearchProjects(patch.researchProjects);localStorage.setItem('cost-app-research-projects',JSON.stringify(patch.researchProjects))}
     return true
   }
   async function setExpenses(update:(current:Expense[])=>Expense[], revision=workspaceStore?.revision) {
@@ -966,13 +976,34 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   const legacyYears = [...new Set(legacy.map(project => project.year))]
   const legacyYear = legacy.find(project => project.order.id === legacyProjectId)?.year ?? ''
   const shownLegacy = legacy.filter(project => project.year === legacyYear)
-  const expenseProjectId = view === 'adminExpenses' ? adminProjectId(orderYear) : view === 'legacyExpenses' ? legacyProjectId : selectedProjectId
+  // 연구비 지출내역 shows one 연구 of the selected year at a time.
+  const [selectedResearchId, setSelectedResearchId] = useState('')
+  const yearResearch = researchOfYear(researchProjects, orderYear)
+  const researchProjectId = yearResearch.some(project => project.id === selectedResearchId) ? selectedResearchId : yearResearch[0]?.id ?? ''
+  const shownResearch = yearResearch.find(project => project.id === researchProjectId) ?? null
+  const [researchModal, setResearchModal] = useState<{ project: ResearchProject | null } | null>(null)
+  async function saveResearchProject(project: ResearchProject) {
+    const exists = researchProjects.some(other => other.id === project.id)
+    const saved = await updateWorkspace({ researchProjects: exists ? researchProjects.map(other => other.id === project.id ? project : other) : [...researchProjects, project] })
+    if (saved) { setSelectedResearchId(project.id); setResearchModal(null) }
+    return saved
+  }
+  async function deleteResearchProject(project: ResearchProject) {
+    const used = expenses.some(expense => expense.projectId === project.id) || cardAccounting.some(entry => entry.orderNo.trim() === project.orderNo)
+    if (used) { window.alert(`${project.orderNo} ${project.name}에는 지출내역이나 회계반영 내역이 있어 삭제할 수 없습니다. 지출을 먼저 옮기거나 삭제해 주세요.`); return }
+    if (!window.confirm(`${project.orderNo} ${project.name}을(를) 삭제할까요?`)) return
+    await updateWorkspace({ researchProjects: researchProjects.filter(other => other.id !== project.id) })
+  }
+  const expenseProjectId = view === 'adminExpenses' ? adminProjectId(orderYear) : view === 'researchExpenses' ? researchProjectId : view === 'legacyExpenses' ? legacyProjectId : selectedProjectId
   const selectedProject = view === 'adminExpenses'
     ? adminSummary(adminOrder(orderYear))
+    : view === 'researchExpenses'
+      ? shownResearch ? adminSummary(researchOrder(shownResearch)) : undefined
     : view === 'legacyExpenses' && isAdminProject(legacyProjectId)
       ? adminSummary(adminOrder(adminYearOfProject(legacyProjectId) ?? orderYear))
       : projectSummaries.find((project) => project.id === expenseProjectId)
   const expenseProjectOptions = view === 'adminExpenses' ? adminOrders(orders).filter(order => !isLegacyYear(order.year)).map(adminSummary)
+    : view === 'researchExpenses' ? yearResearch.map(project => adminSummary(researchOrder(project)))
     : view === 'legacyExpenses' ? legacy.map(project => adminSummary(project.order))
     : yearlyProjectSummaries
   const legacyLabel = new Map(legacy.map(project => [project.order.id, project.label]))
@@ -1043,11 +1074,13 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   const searchableExpenses = expenses.filter(expense => isLegacyProjectId(expense.projectId, legacyOrderIds) === (view === 'legacyExpenses'))
   function openSearchedExpense(expense: Expense) {
     const adminYear = adminYearOfProject(expense.projectId)
+    const research = researchProjects.find(project => project.id === expense.projectId)
     const order = orders.find((candidate) => candidate.id === expense.projectId)
     if (isLegacyProjectId(expense.projectId, legacyOrderIds)) selectProject(expense.projectId)
     else if (adminYear) setOrderYear(adminYear)
+    else if (research) { setOrderYear(researchYear(research.orderNo)); setSelectedResearchId(research.id) }
     else if (order) { setOrderYear(getOrderYear(order)); selectProject(order.id) }
-    setView(isLegacyProjectId(expense.projectId, legacyOrderIds) ? 'legacyExpenses' : adminYear ? 'adminExpenses' : 'expenses')
+    setView(isLegacyProjectId(expense.projectId, legacyOrderIds) ? 'legacyExpenses' : adminYear ? 'adminExpenses' : research ? 'researchExpenses' : 'expenses')
     setExpenseSort({ key: 'date', direction: 'desc' })
     setSelectedExpenseIds([expense.id])
     setFocusedExpenseId(expense.id)
@@ -1971,6 +2004,10 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     event.preventDefault()
 
     if (!orderForm.orderNo.trim() || !orderForm.projectName.trim()) return
+    if (isResearchOrderNo(orderForm.orderNo)) {
+      window.alert(`${orderForm.orderNo.trim()}은(는) 연구비 번호(${orderForm.orderNo.trim().slice(0, 3)}NN)입니다. 수주대장에는 다른 번호를 써 주세요.`)
+      return
+    }
 
     if (editingOrderId) {
       const saved = await setOrders((current) =>
@@ -2214,7 +2251,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
 
     if (editingExpenseId) {
       const adminYear = adminYearOfProject(expenseForm.projectId)
-      const orderNo = adminYear ? adminOrder(adminYear).orderNo : orders.find((order) => order.id === expenseForm.projectId)?.orderNo ?? ''
+      const orderNo = adminYear ? adminOrder(adminYear).orderNo : [...orders, ...researchOrders].find((order) => order.id === expenseForm.projectId)?.orderNo ?? ''
       const saved = await updateWorkspace({
         expenses: expenses.map((expense) =>
           expense.id === editingExpenseId
@@ -2238,7 +2275,8 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
         cardAccounting: syncEditedExpense(cardAccounting, { id: editingExpenseId, memo: expenseForm.memo }, orderNo),
       }, expenseEditRevision)
       if (!saved) return
-      if (!isAdminProject(expenseForm.projectId)) setSelectedProjectId(expenseForm.projectId)
+      if (isResearchProject(expenseForm.projectId)) setSelectedResearchId(expenseForm.projectId)
+      else if (!isAdminProject(expenseForm.projectId)) setSelectedProjectId(expenseForm.projectId)
       setFocusedExpenseId(editingExpenseId)
       setEditingExpenseId(null)
       setSelectedExpenseIds([])
@@ -2277,7 +2315,8 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
       },
     ], expenseEditRevision)
     if (!saved) return
-    if (!isAdminProject(expenseForm.projectId)) setSelectedProjectId(expenseForm.projectId)
+    if (isResearchProject(expenseForm.projectId)) setSelectedResearchId(expenseForm.projectId)
+    else if (!isAdminProject(expenseForm.projectId)) setSelectedProjectId(expenseForm.projectId)
     setFocusedExpenseId(addedExpenseId)
     setExpenseForm((current) => ({
       ...current,
@@ -2445,6 +2484,8 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                       ? `${orderYear}년 공사 내역`
                       : view === 'adminExpenses'
                         ? `${orderYear}년 관리비 지출내역`
+                      : view === 'researchExpenses'
+                        ? `${orderYear}년 연구비 지출내역`
                       : view === 'legacyExpenses'
                         ? '22년 이전 지출내역'
                       : view === 'worklogList'
@@ -2476,7 +2517,8 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
             ) : view === 'orders' ||
               view === 'dashboard' ||
               view === 'expenses' ||
-              view === 'adminExpenses' ? (
+              view === 'adminExpenses' ||
+              view === 'researchExpenses' ? (
               <div className="year-switch" aria-label="수주년도">
                 {orderYears.map((year) => (
                   <button
@@ -2521,14 +2563,14 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
         </header>
 
         {view === 'corporateCards' && <CorporateCards
-            orders={recentOrders}
+            orders={[...recentOrders, ...researchOrders]}
             expenses={expenses}
             cardAccounting={cardAccounting}
             onSave={patch => updateWorkspace(patch)}
             onCreateOrder={openNewOrderModalFor}
           />}
         {view === 'taxInvoices' && <TaxInvoices
-            orders={recentOrders}
+            orders={[...recentOrders, ...researchOrders]}
             expenses={expenses}
             cardAccounting={cardAccounting}
             onSave={patch => updateWorkspace(patch)}
@@ -3621,7 +3663,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
           </section>
         )}
 
-        {(view === 'expenses' || view === 'adminExpenses' || view === 'legacyExpenses') && (
+        {(view === 'expenses' || view === 'adminExpenses' || view === 'researchExpenses' || view === 'legacyExpenses') && (
           <section className="content-grid single">
             {view === 'legacyExpenses' ? (
             <div className="panel full">
@@ -3637,6 +3679,27 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                   ))}
                 </select>
               </label>
+            </div>
+            ) : view === 'researchExpenses' ? (
+            <div className="panel full">
+              <div className="panel-heading">
+                <h3>{orderYear}년 연구비 지출내역{shownResearch ? ` (${shownResearch.orderNo})` : ''}</h3>
+                <span>공사가 아닌 연구·테스트 비용입니다. 수주대장에는 들어가지 않고, {orderYear.slice(2)}901부터의 번호로 회계반영한 내역이 이곳에 모입니다</span>
+              </div>
+              <div className="research-select">
+                {yearResearch.length > 0 ? <label className="project-select-control">
+                  연구 선택
+                  <select value={researchProjectId} onChange={(event) => { setSelectedExpenseIds([]); setSelectedResearchId(event.target.value) }}>
+                    {yearResearch.map((project) => <option key={project.id} value={project.id}>{project.orderNo} · {project.name}</option>)}
+                  </select>
+                </label> : <p className="research-empty">{orderYear}년에 등록된 연구가 없습니다. 연구 등록을 누르면 {orderYear.slice(2)}901부터 번호가 붙습니다.</p>}
+                <div className="research-actions">
+                  <button className="primary-button compact-button" type="button" onClick={() => setResearchModal({ project: null })}>연구 등록</button>
+                  <button className="ghost-button compact-button" type="button" disabled={!shownResearch} onClick={() => setResearchModal({ project: shownResearch })}>연구명 수정</button>
+                  <button className="ghost-button compact-button" type="button" disabled={!shownResearch} onClick={() => { if (shownResearch) void deleteResearchProject(shownResearch) }}>삭제</button>
+                </div>
+              </div>
+              {researchModal && <ResearchProjectModal project={researchModal.project} year={orderYear} projects={researchProjects} onSave={saveResearchProject} onClose={() => setResearchModal(null)} />}
             </div>
             ) : view === 'adminExpenses' ? (
             <div className="panel full">
@@ -3668,7 +3731,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
             )}
             <div className="panel full">
               <div className="panel-heading">
-                <h3>{selectedProject && isAdminProject(selectedProject.id) ? '관리비 지출내역' : '선택 공사 지출내역'}</h3>
+                <h3>{selectedProject && isAdminProject(selectedProject.id) ? '관리비 지출내역' : selectedProject && isResearchProject(selectedProject.id) ? '연구비 지출내역' : '선택 공사 지출내역'}</h3>
                 <span>{formatMoney(selectedProject?.cost ?? 0)}</span>
               </div>
               <div className="contact-actions">
@@ -3696,6 +3759,8 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                   <button
                     className="primary-button compact-button"
                     type="button"
+                    disabled={!expenseProjectId}
+                    title={expenseProjectId ? undefined : '연구를 먼저 등록해 주세요'}
                     onClick={openNewExpenseModal}
                   >
                     지출 등록
@@ -3812,7 +3877,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
               <Pager page={shownExpensePage} perPage={sheetRowsPerPage} total={filteredExpenses.length} onPage={showExpensePage} />
             </div>
 
-            {searchingExpenses &&<ExpenseSearch expenses={searchableExpenses} orders={orders} kinds={expenseKindOptions} kindOf={normalizeExpenseKind}
+            {searchingExpenses &&<ExpenseSearch expenses={searchableExpenses} orders={[...orders, ...researchOrders]} kinds={expenseKindOptions} kindOf={normalizeExpenseKind}
               scope={view === 'legacyExpenses' ? '22년 이전 공사와 관리비' : '모든 공사와 관리비'}
               filters={expenseSearchFilters} onFilters={setExpenseSearchFilters} onOpen={openSearchedExpense} onClose={() => setSearchingExpenses(false)} />}
             {cleaningVendors && <VendorCleanup uses={vendorUses} since={vendorCleanupSince} until={today} onApply={renameVendors} onClose={() => setCleaningVendors(false)} />}
@@ -3827,7 +3892,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                     <ModalClose onClose={cancelExpenseEdit} />
                   </div>
                   <label>
-                    {view === 'adminExpenses' ? '관리비 년도' : '공사'}
+                    {view === 'adminExpenses' ? '관리비 년도' : view === 'researchExpenses' ? '연구' : '공사'}
                     <select
                       value={expenseForm.projectId}
                       onChange={(event) =>
@@ -3839,7 +3904,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                     >
                       {expenseProjectOptions.map((order) => (
                         <option key={order.id} value={order.id}>
-                          {view === 'adminExpenses' ? `${order.orderNo} · ${order.projectName}` : legacyLabel.get(order.id) ?? formatProjectOption(order)}
+                          {view === 'adminExpenses' || view === 'researchExpenses' ? `${order.orderNo} · ${order.projectName}` : legacyLabel.get(order.id) ?? formatProjectOption(order)}
                         </option>
                       ))}
                     </select>

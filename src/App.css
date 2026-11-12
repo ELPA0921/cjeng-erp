@@ -2488,3 +2488,10 @@ tbody tr.selected-row:hover td {
 .order-search-results .text-link { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .orders-table tr.order-found td { background: #eaf6f0; }
 .order-heading-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* 연구비 지출내역: the 연구 picker with its 등록·수정·삭제 buttons beside it */
+.research-select { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
+.research-select .project-select-control { flex: 1 1 320px; margin: 0; }
+.research-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.research-actions .compact-button { min-height: 40px; }
+.research-empty { flex: 1 1 320px; margin: 0; color: var(--text-muted); font-size: 14px; }

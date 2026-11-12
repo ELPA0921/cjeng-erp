@@ -4,7 +4,7 @@ import {validateWorkspace} from './workspaceValidation.ts'
 import {createWorkspaceHandler} from '../api/workspace.ts'
 import {sameOrigin} from './security.ts'
 const origin='https://workspace.example.test'
-const empty=()=>({expenses:[],workLogs:[],purchases:[],inactiveVendorKeys:[],deletedVendorKeys:[],vendorEdits:{},customVendorContacts:{purchase:[],order:[]},deliveries:[],cardAccounting:[],estimateItems:[],estimates:[],materialQuotes:[],estimateSettings:{}})
+const empty=()=>({expenses:[],workLogs:[],purchases:[],inactiveVendorKeys:[],deletedVendorKeys:[],vendorEdits:{},customVendorContacts:{purchase:[],order:[]},deliveries:[],cardAccounting:[],estimateItems:[],estimates:[],materialQuotes:[],researchProjects:[],estimateSettings:{}})
 const data=()=>({...empty(),expenses:[{id:'e',projectId:'p',date:'2026-10-22',kind:'법인카드',vendor:'거래처',memo:'',amount:1100,supplyAmount:1000,vatAmount:100}],workLogs:[{id:'w',projectId:'p',date:'2026-10-22',worker:'직원',workerType:'직원',startTime:'07:30',endTime:'16:30',location:'',task:'작업',note:'',hours:8,overtimeHours:0}]})
 const req=(body,method='PUT')=>({method,headers:{origin,'content-type':'application/json'},body})
 const res=()=>({statusCode:200,setHeader(){},end(value){this.body=JSON.parse(value)}})
@@ -39,4 +39,12 @@ test('card accounting defaults for older snapshots and rejects unknown statuses'
   assert.deepEqual(validateWorkspace({...empty(),cardAccounting:[posted,forced]}).cardAccounting,[posted,forced])
   assert.throws(()=>validateWorkspace({...empty(),cardAccounting:[{...forced,status:'반영'}]}),/회계반영 상태/)
   assert.throws(()=>validateWorkspace({...empty(),cardAccounting:[forced,forced]}),/중복/)
+})
+
+test('연구비 numbers must be 269NN-style, named and used once', () => {
+  const ok = validateWorkspace({ ...empty(), researchProjects: [{ id: 'research-a', orderNo: '26901', name: '필터 테스트' }] })
+  assert.deepEqual(ok.researchProjects, [{ id: 'research-a', orderNo: '26901', name: '필터 테스트' }])
+  for (const bad of [[{ id: 'r1', orderNo: '26035', name: 'x' }], [{ id: 'r1', orderNo: '26900', name: 'x' }], [{ id: 'r1', orderNo: '26901', name: ' ' }],
+    [{ id: 'r1', orderNo: '26901', name: 'a' }, { id: 'r2', orderNo: '26901', name: 'b' }]])
+    assert.throws(() => validateWorkspace({ ...empty(), researchProjects: bad }))
 })
