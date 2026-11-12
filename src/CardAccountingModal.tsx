@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import type { Order } from './orderTypes'
 import type { CardAccounting } from './workspaceTypes'
 import { adminOrders } from './adminExpenses'
+import { isResearchProject } from './researchExpenses'
 import ModalClose from './ModalClose'
 import OrderNoField from './OrderNoField'
 import { findOrder, invalidOrderRows, missingOrderMessage, type CardAccountingChoice, type CardAccountingInput, type PostingSource } from './cardAccounting'
@@ -42,7 +43,8 @@ export default function CardAccountingModal({ mode, rows, entries, orders, onSub
     onRemove?.(id)
   }
   // Newest order number first; each year's 관리비 code (26000) lands after that year's 공사.
-  const sortedOrders = [...adminOrders(orders), ...orders].sort((a, b) => orderNoKey(b.orderNo).localeCompare(orderNoKey(a.orderNo), 'ko-KR', { numeric: true }))
+  // 연구비 (269NN) is seldom used, so it comes after every 공사 and 관리비.
+  const sortedOrders = [...adminOrders(orders), ...orders].sort((a, b) => Number(isResearchProject(a.id)) - Number(isResearchProject(b.id)) || orderNoKey(b.orderNo).localeCompare(orderNoKey(a.orderNo), 'ko-KR', { numeric: true }))
   const keyword = search.trim().toLowerCase()
   const pickerOrders = keyword ? sortedOrders.filter(order => [order.orderNo, order.projectName, order.client1, order.region].join(' ').toLowerCase().includes(keyword)) : sortedOrders
 
