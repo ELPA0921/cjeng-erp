@@ -70,7 +70,7 @@
 .card-order-picker-backdrop { z-index: 11; }
 .card-order-picker { width: min(560px, 100%); }
 .card-order-picker-search { width: 100%; min-height: 40px; margin: 14px 0 10px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
-.card-order-picker-list { display: grid; gap: 4px; max-height: 50vh; overflow: auto; }
+.card-order-picker-list { display: grid; align-content: start; gap: 4px; height: 50vh; overflow-y: auto; }
 .card-order-picker-list button { display: grid; grid-template-columns: 90px 1fr; gap: 2px 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
 .card-order-picker-list button:hover { border-color: #9ccbb1; background: #f0f9f4; }
 .card-order-picker-list strong { grid-row: span 2; align-self: center; font-variant-numeric: tabular-nums; }
