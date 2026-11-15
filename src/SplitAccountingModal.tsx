@@ -11,11 +11,11 @@ let nextKey = 0
 const line = (part: Partial<SplitPart> = {}): Line => ({ key: nextKey++, orderNo: part.orderNo ?? '', memo: part.memo ?? '', supply: part.supplyAmount ? String(part.supplyAmount) : '' })
 
 /**
- * 분할 회계반영: shares one row's 공급가액 out over several orders. Each share gets its own
+ * 분할회계반영: shares one row's 공급가액 out over several orders. Each share gets its own
  * 수주번호 and 내용; 부가세 and 합계 follow the 공급가액. One share may be left blank and takes
  * whatever is left over.
  */
-export default function SplitAccountingModal({ row, parts, orderNo, memo, orders, onApply, onClose }: {
+export default function SplitAccountingModal({ row, parts, orderNo, memo, orders, onSave, onClose }: {
   row: PostingSource
   /** The split being edited, or undefined to start a new one. */
   parts?: SplitPart[]
@@ -23,13 +23,15 @@ export default function SplitAccountingModal({ row, parts, orderNo, memo, orders
   orderNo: string
   memo: string
   orders: Order[]
-  onApply: (parts: SplitPart[] | null) => void
+  /** Saves the split; returns an error message, or null once saved. */
+  onSave: (parts: SplitPart[]) => Promise<string | null>
   onClose: () => void
 }) {
   const total = row.supplyAmount ?? 0
   const [lines, setLines] = useState<Line[]>(() => parts?.length ? parts.map(line) : [line({ orderNo, memo }), line({ memo })])
   const [invalid, setInvalid] = useState<Set<number>>(() => new Set())
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
   const filled = lines.filter(item => digits(item.supply)).reduce((sum, item) => sum + Number(digits(item.supply)), 0)
   const left = total - filled
   const blanks = lines.filter(item => !digits(item.supply))
@@ -44,22 +46,25 @@ export default function SplitAccountingModal({ row, parts, orderNo, memo, orders
     if ('orderNo' in patch) setInvalid(current => { const next = new Set(current); next.delete(key); return next })
     setError('')
   }
-  function apply(event: FormEvent) {
+  async function apply(event: FormEvent) {
     event.preventDefault()
     const next = lines.map((item, index) => ({ orderNo: item.orderNo.trim(), memo: item.memo.trim(), supplyAmount: supplies[index] }))
     const missing = lines.filter(item => !findOrder(orders, item.orderNo)).map(item => item.key)
     setInvalid(new Set(missing))
     const failure = splitError(row, next, orders)
     if (failure) { setError(failure); return }
-    onApply(next)
+    setSaving(true); setError('')
+    const saveError = await onSave(next)
+    setSaving(false)
+    if (saveError) setError(saveError)
   }
 
   return <div className="modal-backdrop card-order-picker-backdrop" role="presentation">
-    <form className="modal-panel form-panel card-split-modal" role="dialog" aria-modal="true" aria-labelledby="card-split-title" onSubmit={apply}>
+    <form className="modal-panel form-panel card-split-modal" role="dialog" aria-modal="true" aria-labelledby="card-split-title" onSubmit={event => void apply(event)}>
       <div className="modal-heading">
-        <div><h3 id="card-split-title">분할 회계반영</h3>
+        <div><h3 id="card-split-title">분할회계반영</h3>
           <span>{row.date} {row.vendor} · 공급가액 {money(total)}원을 수주별로 나눕니다. 비워 둔 한 칸에는 남은 금액이 들어갑니다.</span></div>
-        <ModalClose onClose={onClose} />
+        <ModalClose onClose={onClose} disabled={saving} />
       </div>
       <div className="table-wrap card-accounting-rows card-split-rows">
         <table><thead><tr><th>수주번호</th><th>공급가액</th><th>부가세</th><th>합계</th><th>내용</th><th aria-label="빼기" /></tr></thead>
@@ -81,9 +86,8 @@ export default function SplitAccountingModal({ row, parts, orderNo, memo, orders
       </div>
       {error && <p className="card-query-error" role="alert">{error}</p>}
       <div className="modal-actions">
-        {parts?.length ? <button className="ghost-button" type="button" onClick={() => onApply(null)}>분할 해제</button> : null}
-        <button className="ghost-button" type="button" onClick={onClose}>취소</button>
-        <button className="primary-button" type="submit">분할 적용</button>
+        <button className="ghost-button" type="button" disabled={saving} onClick={onClose}>취소</button>
+        <button className="primary-button" type="submit" disabled={saving}>{saving ? '저장 중…' : parts?.length ? '수정 저장' : '분할회계반영'}</button>
       </div>
     </form>
   </div>

@@ -1,15 +1,17 @@
 import { useRef, useState } from 'react'
 import type { Order } from './orderTypes'
 import type { CardAccounting, Expense, WorkspaceData } from './workspaceTypes'
-import { applyCardAccounting, type CardAccountingInput, type PostingSource } from './cardAccounting'
+import { applyCardAccounting, canSplit, postingOrders, type CardAccountingInput, type PostingSource, type SplitPart } from './cardAccounting'
 import CardAccountingModal from './CardAccountingModal'
+import SplitAccountingModal from './SplitAccountingModal'
 
-const statusClass: Record<string, string> = { 회계반영: 'is-posted', 강제회계반영: 'is-forced' }
-const filters = ['전체', '미반영', '회계반영', '강제회계반영'] as const
+const statusClass: Record<string, string> = { 회계반영: 'is-posted', 분할회계반영: 'is-split', 강제회계반영: 'is-forced' }
+// 분할회계반영 is a 회계반영 shared over several orders; it is listed on its own.
+const filters = ['전체', '미반영', '회계반영', '분할회계반영', '강제회계반영'] as const
 type Filter = typeof filters[number]
 type SortValue = string | number | null | undefined
 const compareValues = (a: SortValue, b: SortValue) => typeof a === 'number' && typeof b === 'number' ? a - b : String(a ?? '').localeCompare(String(b ?? ''), 'ko-KR', { numeric: true })
-const statusOrder = ['미반영', '회계반영', '강제회계반영']
+const statusOrder = ['미반영', '회계반영', '분할회계반영', '강제회계반영']
 const isBlank = (value: SortValue) => value === null || value === undefined || value === ''
 
 export type PostingProps = {
@@ -38,6 +40,7 @@ const normalize = (value: string) => value.toLowerCase().replace(/[\s,]/g, '')
 export function usePosting<T extends { id: string }>(rows: T[], { orders, expenses, cardAccounting, onSave, onCreateOrder }: PostingProps, { toSource, sortValue, defaultSort, searchText }: PostingView<T>) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [modal, setModal] = useState<{ mode: 'post' | 'edit'; rows: PostingSource[] } | null>(null)
+  const [splitRow, setSplitRow] = useState<PostingSource | null>(null)
   const [notice, setNotice] = useState('')
   const [filter, setFilter] = useState<Filter>('미반영')
   const [savingForced, setSavingForced] = useState(false)
@@ -45,7 +48,7 @@ export function usePosting<T extends { id: string }>(rows: T[], { orders, expens
   const [search, setSearch] = useState('')
   const skippedNote = useRef('')
   const entries = new Map(cardAccounting.map(entry => [entry.id, entry]))
-  const statusOf = (row: T) => entries.get(row.id)?.status ?? '미반영'
+  const statusOf = (row: T) => { const entry = entries.get(row.id); return entry?.splits?.length ? '분할회계반영' : entry?.status ?? '미반영' }
   const valueOf = (row: T, key: string): SortValue => key === 'orderNo' ? entries.get(row.id)?.orderNo : key === 'status' ? statusOrder.indexOf(statusOf(row)) : key === 'memo' ? entries.get(row.id)?.memo || sortValue(row, key) : sortValue(row, key)
   // Every word must appear somewhere in the row; spaces and thousands separators are ignored.
   const words = search.split(/\s+/).map(normalize).filter(Boolean)
@@ -90,6 +93,23 @@ export function usePosting<T extends { id: string }>(rows: T[], { orders, expens
     setNotice(picked.length ? '' : '수정할 반영 항목을 선택해 주세요. 미반영 항목은 회계반영 버튼을 사용하세요.')
     if (picked.length) setModal({ mode: 'edit', rows: picked.map(toSource) })
   }
+  // 분할회계반영 works on one row at a time; on a row already split it edits the split.
+  function openSplit() {
+    if (selectedRows.length !== 1) { setNotice('분할회계반영은 한 건씩 선택해 주세요.'); return }
+    const row = toSource(selectedRows[0])
+    if (!canSplit(row)) { setNotice('공급가액이 없는 항목은 분할회계반영할 수 없습니다.'); return }
+    setNotice('')
+    setSplitRow(row)
+  }
+  async function saveSplit(parts: SplitPart[]) {
+    if (!splitRow) return null
+    try { if (!await save([{ row: splitRow, status: '회계반영', orderNo: parts[0].orderNo, memo: parts[0].memo, splits: parts }])) return '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.' }
+    catch (err) { return err instanceof Error ? err.message : '저장하지 못했습니다.' }
+    setNotice(`1건을 ${new Set(parts.map(part => part.orderNo)).size}개 수주로 분할회계반영했습니다.`)
+    setSplitRow(null)
+    setSelectedIds(new Set())
+    return null
+  }
   async function forcePost() {
     const picked = pick(['미반영'], '강제회계반영')
     if (!picked.length) return
@@ -133,6 +153,7 @@ export function usePosting<T extends { id: string }>(rows: T[], { orders, expens
       </div>
       <div className="card-accounting-actions">
         <button className="primary-button" type="button" disabled={selectedIds.size === 0 || savingForced} onClick={openPost}>회계반영</button>
+        <button className="ghost-button card-split-action" type="button" disabled={selectedIds.size === 0 || savingForced} title="한 건의 공급가액을 여러 수주로 나눠 회계반영" onClick={openSplit}>분할회계반영</button>
         <button className="ghost-button card-force-button" type="button" disabled={selectedIds.size === 0 || savingForced} onClick={() => void forcePost()}>{savingForced ? '저장 중…' : '강제회계반영'}</button>
         <button className="ghost-button" type="button" disabled={selectedIds.size === 0 || savingForced} onClick={openEdit}>수정</button>
       </div>
@@ -141,12 +162,17 @@ export function usePosting<T extends { id: string }>(rows: T[], { orders, expens
   </>
   const selectAll = <input type="checkbox" aria-label="보이는 항목 전체 선택" disabled={pageRows.length === 0} checked={pageRows.length > 0 && pageSelected === pageRows.length} ref={input => { if (input) input.indeterminate = pageSelected > 0 && pageSelected < pageRows.length }} onChange={event => togglePage(event.target.checked)} />
   const rowBox = (row: T, label: string) => <input type="checkbox" aria-label={`${label} 선택`} checked={selectedIds.has(row.id)} onChange={event => toggleRow(row.id, event.target.checked)} />
-  const statusChip = (row: T) => { const status = statusOf(row); const parts = entries.get(row.id)?.splits?.length; return <span className={`card-accounting ${statusClass[status] ?? ''}`} title={parts ? `${parts}개 수주로 나눠 반영했습니다` : undefined}>{status}{parts ? ` · 분할 ${parts}` : ''}</span> }
+  const statusChip = (row: T) => { const status = statusOf(row); const parts = entries.get(row.id)?.splits?.length; return <span className={`card-accounting ${statusClass[status] ?? ''}`} title={parts ? `${parts}개 수주로 나눠 반영했습니다` : undefined}>{status}</span> }
+  const splitEntry = splitRow ? entries.get(splitRow.id) : undefined
+  const splitElement = splitRow && <SplitAccountingModal row={splitRow} orders={postingOrders(orders)}
+    parts={splitEntry?.splits?.map(({ orderNo, memo, supplyAmount }) => ({ orderNo, memo, supplyAmount }))}
+    orderNo={splitEntry?.status === '회계반영' ? splitEntry.orderNo : ''} memo={splitEntry?.memo || splitRow.defaultMemo || ''}
+    onSave={saveSplit} onClose={() => setSplitRow(null)} />
   const modalElement = modal && <CardAccountingModal mode={modal.mode} rows={modal.rows} entries={entries} orders={orders} onSubmit={submitModal} onClose={() => setModal(null)} onCreateOrder={onCreateOrder} onRemove={removeFromModal} />
   const sortHeader = (key: string, label: string) => <button className="sort-button" type="button" onClick={() => setSort(current => ({ key, direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' }))}>
     {label}{sort.key === key ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}
   </button>
   const emptyMessage = (none: string) => rows.length === 0 ? none : words.length ? `검색어와 일치하는 ${filter === '전체' ? '' : `${filter} `}항목이 없습니다.` : `조회 기간에 ${filter} 항목이 없습니다.`
 
-  return { entries, pageRows, selectedIds, setFilter, reset, searchBox, toolbar, selectAll, rowBox, statusChip, sortHeader, modal: modalElement, emptyMessage }
+  return { entries, pageRows, selectedIds, setFilter, reset, searchBox, toolbar, selectAll, rowBox, statusChip, sortHeader, modal: <>{modalElement}{splitElement}</>, emptyMessage }
 }

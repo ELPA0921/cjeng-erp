@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { ConnectedCard, CardApproval, CardApprovalPage } from './cardTypes'
 import { cardSupplyAmount } from './cardAmounts'
-import { cardPostingSource } from './cardAccounting'
+import { cardPostingSource, entryOrderNos } from './cardAccounting'
 import { usePosting, type PostingProps, type PostingView } from './usePosting'
 import './CorporateCards.css'
 
@@ -95,7 +95,7 @@ export default function CorporateCards(props: PostingProps) {
               const entry = posting.entries.get(row.id)
               return <tr key={row.id} className={posting.selectedIds.has(row.id) ? 'card-row-selected' : undefined}>
                 <td className="card-check">{posting.rowBox(row, `${row.dateTime} ${row.store}`)}</td>
-                <td>{entry?.orderNo || '-'}</td>
+                <td>{entry?.splits?.length ? <span className="card-split-orders">{entryOrderNos(entry).map(orderNo => <span key={orderNo}>{orderNo}</span>)}</span> : entry?.orderNo || '-'}</td>
                 <td className="card-date" data-time={row.dateTime.slice(11, 16)}>{row.dateTime.slice(0, 10)}</td><td>{row.store || '-'}</td><td>{entry?.memo || '-'}</td>
                 <td>{money(supply.value)}</td><td>{money(row.vatAmount)}</td>
                 <td><span className={cancelled ? 'card-cancelled' : undefined} title={row.approvalType || undefined}>{money(row.amount)}</span></td>

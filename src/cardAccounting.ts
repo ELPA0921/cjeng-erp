@@ -2,7 +2,8 @@ import type { CardApproval } from './cardTypes.ts'
 import type { Order } from './orderTypes.ts'
 import type { CardAccounting, CardAccountingSplit, CardAccountingStatus, Expense } from './workspaceTypes.ts'
 import { cardSupplyAmount } from './cardAmounts.ts'
-import { adminOrder, adminYearOfOrderNo } from './adminExpenses.ts'
+import { adminOrder, adminOrders, adminYearOfOrderNo } from './adminExpenses.ts'
+import { isResearchProject } from './researchExpenses.ts'
 
 // A Barobill row (card approval or purchase tax invoice) as the posting flow sees it.
 export type PostingSource = {
@@ -33,6 +34,14 @@ export function findOrder(orders: Order[], orderNo: string) {
   const adminYear = adminYearOfOrderNo(value)
   return adminYear ? adminOrder(adminYear) : orders.find(order => order.orderNo.trim() === value)
 }
+
+// 26028 and 2026-028 sort as the same year and number.
+const orderNoKey = (orderNo: string) => /^d{5}$/.test(orderNo.trim()) ? `20${orderNo.trim().slice(0, 2)}-${orderNo.trim().slice(2)}` : orderNo.trim()
+/**
+ * The orders a 수주번호 can be picked from: newest number first, each year's 관리비 code (26000)
+ * after that year's 공사, and 연구비 (269NN), seldom used, after everything else.
+ */
+export const postingOrders = (orders: Order[]) => [...adminOrders(orders), ...orders].sort((a, b) => Number(isResearchProject(a.id)) - Number(isResearchProject(b.id)) || orderNoKey(b.orderNo).localeCompare(orderNoKey(a.orderNo), 'ko-KR', { numeric: true }))
 
 // One expense per source row, so posting the same row twice can never duplicate it.
 export const cardExpenseId = (approvalId: string) => `card-${approvalId.slice(0, 32)}`

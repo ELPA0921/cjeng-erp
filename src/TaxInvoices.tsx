@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { PurchaseTaxInvoice, PurchaseTaxInvoicePage } from './taxInvoiceTypes'
-import type { PostingSource } from './cardAccounting'
+import { entryOrderNos, type PostingSource } from './cardAccounting'
 import { usePosting, type PostingProps, type PostingView } from './usePosting'
 import './CorporateCards.css'
 
@@ -70,7 +70,7 @@ export default function TaxInvoices(props: PostingProps) {
               const entry = posting.entries.get(row.id)
               return <tr key={row.id} className={posting.selectedIds.has(row.id) ? 'card-row-selected' : undefined}>
                 <td className="card-check">{posting.rowBox(row, `${row.writeDate} ${row.vendor}`)}</td>
-                <td>{entry?.orderNo || '-'}</td>
+                <td>{entry?.splits?.length ? <span className="card-split-orders">{entryOrderNos(entry).map(orderNo => <span key={orderNo}>{orderNo}</span>)}</span> : entry?.orderNo || '-'}</td>
                 <td title={`국세청 승인번호 ${row.approvalNumber}`}>{row.writeDate}</td>
                 <td>{row.vendor || '-'}{row.modified && <small className="tax-modified" title="수정 세금계산서">수정</small>}</td>
                 <td className={entry?.memo ? undefined : 'tax-item'}>{entry?.memo || row.itemName || '-'}</td>
@@ -83,7 +83,7 @@ export default function TaxInvoices(props: PostingProps) {
           </table>
         </div>
         <p className="card-query-hint">내용 칸의 회색 글씨는 세금계산서 품목명이며, 회계반영할 때 내용의 기본값으로 들어갑니다.</p>
-        <p className="card-query-hint">회계반영하면 입력한 수주의 지출내역에 전자세금계산서 지출로 등록됩니다. 강제회계반영은 지출내역에 등록하지 않고 반영 처리만 합니다.</p>
+        <p className="card-query-hint">회계반영하면 입력한 수주의 지출내역에 전자세금계산서 지출로 등록됩니다. 분할회계반영은 한 건의 공급가액을 여러 수주로 나눠 각각 등록합니다. 강제회계반영은 지출내역에 등록하지 않고 반영 처리만 합니다.</p>
         {posting.modal}
       </> : !loading && !error && <div className="expense-source-empty"><strong>기간을 선택한 뒤 내역 조회를 눌러주세요.</strong><p>홈택스에 신고된 매입 세금계산서를 확인할 수 있습니다.</p></div>}
     </div>

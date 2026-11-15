@@ -1,19 +1,13 @@
 import { useState, type FormEvent } from 'react'
 import type { Order } from './orderTypes'
 import type { CardAccounting } from './workspaceTypes'
-import { adminOrders } from './adminExpenses'
-import { isResearchProject } from './researchExpenses'
 import ModalClose from './ModalClose'
 import OrderNoField from './OrderNoField'
-import SplitAccountingModal from './SplitAccountingModal'
-import { canSplit, findOrder, invalidOrderRows, missingOrderMessage, splitAmounts, type CardAccountingChoice, type CardAccountingInput, type PostingSource, type SplitPart } from './cardAccounting'
+import { findOrder, invalidOrderRows, missingOrderMessage, postingOrders, splitAmounts, type CardAccountingChoice, type CardAccountingInput, type PostingSource, type SplitPart } from './cardAccounting'
 
 type Draft = { status: CardAccountingChoice; orderNo: string; memo: string; splits?: SplitPart[] }
 const money = (value: number) => value.toLocaleString('ko-KR', { maximumFractionDigits: 4 })
 const statusChoices: CardAccountingChoice[] = ['회계반영', '강제회계반영', '미반영']
-
-// 26028 and 2026-028 sort as the same year and number.
-const orderNoKey = (orderNo: string) => /^\d{5}$/.test(orderNo.trim()) ? `20${orderNo.trim().slice(0, 2)}-${orderNo.trim().slice(2)}` : orderNo.trim()
 
 export default function CardAccountingModal({ mode, rows, entries, orders, onSubmit, onClose, onCreateOrder, onRemove }: {
   mode: 'post' | 'edit'
@@ -33,7 +27,6 @@ export default function CardAccountingModal({ mode, rows, entries, orders, onSub
   })))
   const [invalid, setInvalid] = useState<Set<string>>(() => new Set())
   const [pickerFor, setPickerFor] = useState<string | null>(null)
-  const [splitFor, setSplitFor] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -43,13 +36,10 @@ export default function CardAccountingModal({ mode, rows, entries, orders, onSub
   function remove(id: string) {
     setInvalid(current => { const next = new Set(current); next.delete(id); return next })
     if (pickerFor === id) setPickerFor(null)
-    if (splitFor === id) setSplitFor(null)
     setError('')
     onRemove?.(id)
   }
-  // Newest order number first; each year's 관리비 code (26000) lands after that year's 공사.
-  // 연구비 (269NN) is seldom used, so it comes after every 공사 and 관리비.
-  const sortedOrders = [...adminOrders(orders), ...orders].sort((a, b) => Number(isResearchProject(a.id)) - Number(isResearchProject(b.id)) || orderNoKey(b.orderNo).localeCompare(orderNoKey(a.orderNo), 'ko-KR', { numeric: true }))
+  const sortedOrders = postingOrders(orders)
   const keyword = search.trim().toLowerCase()
   const pickerOrders = keyword ? sortedOrders.filter(order => [order.orderNo, order.projectName, order.client1, order.region].join(' ').toLowerCase().includes(keyword)) : sortedOrders
 
@@ -104,11 +94,11 @@ export default function CardAccountingModal({ mode, rows, entries, orders, onSub
               <td className="card-accounting-store">{row.vendor || '-'}</td>
               <td className="card-accounting-amount">{money(row.amount)}</td>
               {mode === 'edit' && <td className="card-accounting-wide" data-label="상태"><select aria-label="상태" value={draft.status} onChange={event => update(row.id, { status: event.target.value as CardAccountingChoice })}>
-                {statusChoices.map(status => <option key={status} value={status}>{status}</option>)}
+                {statusChoices.map(status => <option key={status} value={status}>{status === '회계반영' && draft.splits?.length ? '분할회계반영' : status}</option>)}
               </select></td>}
               {split ? <td className="card-accounting-wide card-split-summary" data-label="분할 회계반영" colSpan={2}>
                 <ul>{split.map((part, index) => <li key={index}><strong>{part.orderNo}</strong><span>{money(part.supplyAmount)}원 <small>(합계 {money(shares[index].amount)})</small></span><em>{part.memo || '-'}</em></li>)}</ul>
-                <button type="button" className="ghost-button card-split-button" disabled={saving} onClick={() => setSplitFor(row.id)}>분할 수정</button>
+                <small className="card-split-hint">나눈 금액·수주는 분할회계반영 버튼에서 고칩니다.</small>
                 {invalid.has(row.id) && <small className="card-order-error" role="alert">{missingOrderMessage}</small>}
               </td> : <><td className="card-accounting-wide" data-label="수주번호">
                 <div className="card-order-field">
@@ -117,7 +107,6 @@ export default function CardAccountingModal({ mode, rows, entries, orders, onSub
                   <button type="button" className="ghost-button card-order-search" aria-label="수주번호 찾기" title="수주번호 찾기" disabled={!needsOrder} onClick={() => { setSearch(''); setPickerFor(row.id) }}>
                     <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" strokeWidth="2" /><path d="m16 16 4.5 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
                   </button>
-                  {canSplit(row) && <button type="button" className="ghost-button card-split-button" title="공급가액을 여러 수주로 나눠 회계반영" disabled={!needsOrder || saving} onClick={() => setSplitFor(row.id)}>분할</button>}
                 </div>
                 {invalid.has(row.id) && <small className="card-order-error" role="alert">{missingOrderMessage}</small>}
               </td>
@@ -137,14 +126,6 @@ export default function CardAccountingModal({ mode, rows, entries, orders, onSub
         <button className="primary-button" type="submit" disabled={saving}>{saving ? '저장 중…' : mode === 'post' ? '회계반영' : '수정 저장'}</button>
       </div>
     </form>
-    {splitFor && (() => {
-      const row = rows.find(item => item.id === splitFor)
-      if (!row) return null
-      const draft = drafts[row.id]
-      return <SplitAccountingModal row={row} parts={draft.splits} orderNo={draft.orderNo} memo={draft.memo} orders={sortedOrders}
-        onClose={() => setSplitFor(null)}
-        onApply={parts => { setDrafts(current => { const next = { ...current[row.id], splits: parts ?? undefined }; if (!parts) delete next.splits; return { ...current, [row.id]: next } }); setInvalid(current => { const next = new Set(current); next.delete(row.id); return next }); setError(''); setSplitFor(null) }} />
-    })()}
     {pickerFor && <div className="modal-backdrop card-order-picker-backdrop" role="presentation" onClick={event => { if (event.target === event.currentTarget) setPickerFor(null) }}>
       <div className="modal-panel small-modal card-order-picker" role="dialog" aria-modal="true" aria-labelledby="card-order-picker-title">
         <div className="modal-heading"><div><h3 id="card-order-picker-title">수주번호 선택</h3><span>수주대장에서 선택하면 입력칸에 채워집니다.</span></div>
