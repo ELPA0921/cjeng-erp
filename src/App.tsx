@@ -20,6 +20,7 @@ import { isLegacyProjectId, isLegacyYear, legacyProjects } from './legacyExpense
 import ModalClose from './ModalClose'
 import OutputMenu from './OutputMenu'
 import ExpenseSearch from './ExpenseSearch'
+import { getExpenseSupplyAmount, getExpenseVatAmount } from './expenseAmounts'
 import { emptyExpenseSearch } from './expenseSearchFilters'
 import OrderSearch from './OrderSearch'
 import ResearchProjectModal from './ResearchProjectModal'
@@ -379,14 +380,6 @@ const formatMoneyInput = (value: string) => {
   if (!normalized) return ''
 
   return new Intl.NumberFormat('ko-KR').format(Number(normalized))
-}
-
-function getExpenseSupplyAmount(expense: Expense) {
-  return expense.supplyAmount ?? Math.round(expense.amount / 1.1)
-}
-
-function getExpenseVatAmount(expense: Expense) {
-  return expense.vatAmount ?? expense.amount - getExpenseSupplyAmount(expense)
 }
 
 function calculateExpenseAmountFields<
