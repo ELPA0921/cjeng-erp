@@ -160,4 +160,4 @@
 }
 .card-split-action:not(:disabled) { color: #2d5f8a; border-color: #b8cfe4; }
 .card-split-hint { display: block; color: var(--text-muted); font-size: 11px; }
-.card-split-orders { display: grid; line-height: 1.4; }
+.card-split-orders { border-bottom: 1px dotted currentColor; cursor: help; white-space: nowrap; }

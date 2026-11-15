@@ -70,7 +70,7 @@ export default function TaxInvoices(props: PostingProps) {
               const entry = posting.entries.get(row.id)
               return <tr key={row.id} className={posting.selectedIds.has(row.id) ? 'card-row-selected' : undefined}>
                 <td className="card-check">{posting.rowBox(row, `${row.writeDate} ${row.vendor}`)}</td>
-                <td>{entry?.splits?.length ? <span className="card-split-orders">{entryOrderNos(entry).map(orderNo => <span key={orderNo}>{orderNo}</span>)}</span> : entry?.orderNo || '-'}</td>
+                <td>{entry?.splits?.length ? <span className="card-split-orders" title={entryOrderNos(entry).join('\n')}>{entryOrderNos(entry)[0]} 외</span> : entry?.orderNo || '-'}</td>
                 <td title={`국세청 승인번호 ${row.approvalNumber}`}>{row.writeDate}</td>
                 <td>{row.vendor || '-'}{row.modified && <small className="tax-modified" title="수정 세금계산서">수정</small>}</td>
                 <td className={entry?.memo ? undefined : 'tax-item'}>{entry?.memo || row.itemName || '-'}</td>
