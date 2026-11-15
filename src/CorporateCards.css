@@ -161,3 +161,4 @@
 .card-split-action:not(:disabled) { color: #2d5f8a; border-color: #b8cfe4; }
 .card-split-hint { display: block; color: var(--text-muted); font-size: 11px; }
 .card-split-orders { border-bottom: 1px dotted currentColor; cursor: help; white-space: nowrap; }
+.card-split-tooltip { position: fixed; z-index: 30; display: grid; gap: 2px; min-width: 90px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--text); box-shadow: 0 6px 18px rgba(0, 0, 0, .14); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; cursor: default; pointer-events: none; }
