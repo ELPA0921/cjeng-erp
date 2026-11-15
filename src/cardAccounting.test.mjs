@@ -66,3 +66,44 @@ test('deleting a posted expense returns its row to 미반영 and editing keeps t
   assert.deepEqual(edited[0], { ...posted.cardAccounting[0], orderNo: '26006', memo: '문구류', updatedAt: 'T2' })
   assert.deepEqual(edited[1], forced)
 })
+
+test('분할 회계반영 shares one invoice over several orders and the shares add up exactly', async () => {
+  const { splitAmounts, splitError, withSplitSiblings, unlinkDeletedExpenses, syncEditedExpense, entryOrderNos } = await import('./cardAccounting.ts')
+  const invoice = { id: 'inv-9', date: '2026-11-13', vendor: '대한카고크레인', supplyAmount: 1400000, vatAmount: 140000, amount: 1540000, kind: '전자세금계산서', cardNumber: '' }
+  assert.deepEqual(splitAmounts({ supplyAmount: 1000, vatAmount: 100, amount: 1100 }, [333, 333, 334]), [
+    { supplyAmount: 333, vatAmount: 33, amount: 366 }, { supplyAmount: 333, vatAmount: 33, amount: 366 }, { supplyAmount: 334, vatAmount: 34, amount: 368 },
+  ])
+  assert.match(splitError(invoice, [{ orderNo: '26006', memo: '', supplyAmount: 700000 }, { orderNo: '26007', memo: '', supplyAmount: 600000 }], orders), /맞지 않습니다/)
+  assert.equal(splitError(invoice, [{ orderNo: '26006', memo: '', supplyAmount: 700000 }, { orderNo: '99999', memo: '', supplyAmount: 700000 }], orders), missingOrderMessage)
+  assert.deepEqual(invalidOrderRows([{ row: invoice, status: '회계반영', orderNo: '', memo: '', splits: [{ orderNo: '26006', memo: '', supplyAmount: 1 }, { orderNo: '99999', memo: '', supplyAmount: 1 }] }], orders), ['inv-9'])
+
+  // An earlier single posting is replaced by the shares.
+  const single = applyCardAccounting([{ row: invoice, status: '회계반영', orderNo: '26006', memo: '김포' }], empty, 'T1')
+  const splits = [{ orderNo: '26006', memo: '김포 1일', supplyAmount: 600000 }, { orderNo: '26007', memo: '진영 1일', supplyAmount: 800000 }]
+  const split = applyCardAccounting([{ row: invoice, status: '회계반영', orderNo: '26006', memo: '김포', splits }], { ...single, orders }, 'T2')
+  assert.deepEqual(split.expenses.map(e => [e.id, e.projectId, e.memo, e.supplyAmount, e.vatAmount, e.amount]), [
+    ['tax-inv-9-1', 'o-1', '김포 1일', 600000, 60000, 660000], ['tax-inv-9-2', 'o-2', '진영 1일', 800000, 80000, 880000],
+  ])
+  const entry = split.cardAccounting[0]
+  assert.equal(entry.expenseId, undefined)
+  assert.equal(entry.orderNo, '26006, 26007')
+  assert.equal(entry.memo, '김포 1일 / 진영 1일')
+  assert.deepEqual(entryOrderNos(entry), ['26006', '26007'])
+
+  // Deleting one share takes the other along and sends the invoice back to 미반영.
+  const all = withSplitSiblings(split.cardAccounting, new Set(['tax-inv-9-2']))
+  assert.deepEqual([...all].sort(), ['tax-inv-9-1', 'tax-inv-9-2'])
+  assert.deepEqual(unlinkDeletedExpenses(split.cardAccounting, all), [])
+
+  // Editing a share in 지출내역 keeps the split in step.
+  const edited = syncEditedExpense(split.cardAccounting, { id: 'tax-inv-9-2', memo: '진영', supplyAmount: 800000 }, '26000', 'T3')[0]
+  assert.equal(edited.splits[1].orderNo, '26000')
+  assert.equal(edited.orderNo, '26006, 26000')
+
+  // Undoing the split goes back to one expense; 미반영 removes every share.
+  const merged = applyCardAccounting([{ row: invoice, status: '회계반영', orderNo: '26007', memo: '합침' }], { ...split, orders }, 'T4')
+  assert.deepEqual(merged.expenses.map(e => [e.id, e.projectId, e.amount]), [['tax-inv-9', 'o-2', 1540000]])
+  assert.equal(merged.cardAccounting[0].splits, undefined)
+  const reverted = applyCardAccounting([{ row: invoice, status: '미반영', orderNo: '', memo: '' }], { ...split, orders })
+  assert.deepEqual(reverted, { cardAccounting: [], expenses: [] })
+})

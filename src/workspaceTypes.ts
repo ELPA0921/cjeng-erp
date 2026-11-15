@@ -59,7 +59,10 @@ export type CardAccounting = {
   memo: string
   expenseId?: string
   updatedAt: string
+  /** 분할 회계반영: the row's 공급가액 shared out over several orders, one expense each. */
+  splits?: CardAccountingSplit[]
 }
+export type CardAccountingSplit = { expenseId: string; orderNo: string; memo: string; supplyAmount: number }
 
 /** 연구비: one 연구 registered under a 269NN number (26901, 26902, ...). */
 export type ResearchProject = { id: string; orderNo: string; name: string }

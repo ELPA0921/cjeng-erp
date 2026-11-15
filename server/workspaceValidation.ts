@@ -188,7 +188,17 @@ export function validateCollection(name: WorkspaceCollection, value: unknown) {
   // Older shared snapshots predate card accounting, so a missing list means nothing has been posted yet.
   const cardAccounting=records(value ?? [],['status','orderNo','memo','expenseId','updatedAt'],[],['status','orderNo','memo','updatedAt'],[])
   for (const row of cardAccounting) if (!(cardAccountingStatuses as readonly string[]).includes(String(row.status))) throw new Error('회계반영 상태를 확인하세요.')
-  return cardAccounting
+  // 분할 회계반영 keeps one share per order: its expense, order number, 내용 and 공급가액.
+  const raw = rows(value ?? [])
+  return cardAccounting.map((row, index) => {
+    const splits = raw[index].splits
+    if (splits === undefined) return row
+    if (!Array.isArray(splits) || splits.length < 2 || splits.length > 50 || row.status !== '회계반영') throw new Error('분할 회계반영 내용을 확인하세요.')
+    return { ...row, splits: splits.map(item => {
+      const split = object(item)
+      return { expenseId: text(split.expenseId, true), orderNo: text(split.orderNo, true), memo: text(split.memo ?? ''), supplyAmount: finite(split.supplyAmount, '분할 공급가액') }
+    }) }
+  })
 }
 
 export function validateSetting(name: WorkspaceSetting, value: unknown) {

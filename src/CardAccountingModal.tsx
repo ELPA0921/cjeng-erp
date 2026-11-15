@@ -5,9 +5,10 @@ import { adminOrders } from './adminExpenses'
 import { isResearchProject } from './researchExpenses'
 import ModalClose from './ModalClose'
 import OrderNoField from './OrderNoField'
-import { findOrder, invalidOrderRows, missingOrderMessage, type CardAccountingChoice, type CardAccountingInput, type PostingSource } from './cardAccounting'
+import SplitAccountingModal from './SplitAccountingModal'
+import { canSplit, findOrder, invalidOrderRows, missingOrderMessage, splitAmounts, type CardAccountingChoice, type CardAccountingInput, type PostingSource, type SplitPart } from './cardAccounting'
 
-type Draft = { status: CardAccountingChoice; orderNo: string; memo: string }
+type Draft = { status: CardAccountingChoice; orderNo: string; memo: string; splits?: SplitPart[] }
 const money = (value: number) => value.toLocaleString('ko-KR', { maximumFractionDigits: 4 })
 const statusChoices: CardAccountingChoice[] = ['회계반영', '강제회계반영', '미반영']
 
@@ -27,18 +28,22 @@ export default function CardAccountingModal({ mode, rows, entries, orders, onSub
 }) {
   const [drafts, setDrafts] = useState<Record<string, Draft>>(() => Object.fromEntries(rows.map(row => {
     const entry = entries.get(row.id)
-    return [row.id, { status: mode === 'post' ? '회계반영' : entry?.status ?? '회계반영', orderNo: entry?.orderNo ?? '', memo: entry?.memo || row.defaultMemo || '' }]
+    const splits = entry?.splits?.map(({ orderNo, memo, supplyAmount }) => ({ orderNo, memo, supplyAmount }))
+    return [row.id, { status: mode === 'post' ? '회계반영' : entry?.status ?? '회계반영', orderNo: splits?.[0]?.orderNo ?? entry?.orderNo ?? '', memo: splits?.[0]?.memo || entry?.memo || row.defaultMemo || '', ...(splits ? { splits } : {}) }]
   })))
   const [invalid, setInvalid] = useState<Set<string>>(() => new Set())
   const [pickerFor, setPickerFor] = useState<string | null>(null)
+  const [splitFor, setSplitFor] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const inputs = (): CardAccountingInput[] => rows.map(row => ({ row, ...drafts[row.id] }))
+  // A split only counts while the row is 회계반영; switching to another status sets it aside.
+  const inputs = (): CardAccountingInput[] => rows.map(row => { const { splits, ...draft } = drafts[row.id]; return { row, ...draft, ...(draft.status === '회계반영' && splits?.length ? { splits } : {}) } })
   const removable = mode === 'post' && !!onRemove
   function remove(id: string) {
     setInvalid(current => { const next = new Set(current); next.delete(id); return next })
     if (pickerFor === id) setPickerFor(null)
+    if (splitFor === id) setSplitFor(null)
     setError('')
     onRemove?.(id)
   }
@@ -54,12 +59,12 @@ export default function CardAccountingModal({ mode, rows, entries, orders, onSub
   }
   function checkOrder(id: string) {
     const draft = drafts[id]
-    if (draft.status === '회계반영' && draft.orderNo.trim() && !findOrder(orders, draft.orderNo)) setInvalid(current => new Set(current).add(id))
+    if (draft.status === '회계반영' && !draft.splits?.length && draft.orderNo.trim() && !findOrder(orders, draft.orderNo)) setInvalid(current => new Set(current).add(id))
   }
   function createOrder() {
     // Fill the new order into the rows that still have no order number.
     onCreateOrder(order => {
-      const filled = rows.filter(row => drafts[row.id].status === '회계반영' && !drafts[row.id].orderNo.trim()).map(row => row.id)
+      const filled = rows.filter(row => drafts[row.id].status === '회계반영' && !drafts[row.id].splits?.length && !drafts[row.id].orderNo.trim()).map(row => row.id)
       setDrafts(current => ({ ...current, ...Object.fromEntries(filled.map(id => [id, { ...current[id], orderNo: order.orderNo }])) }))
       setInvalid(current => new Set([...current].filter(id => !filled.includes(id))))
     })
@@ -92,6 +97,8 @@ export default function CardAccountingModal({ mode, rows, entries, orders, onSub
             // typing, and leaving it empty puts the item name back.
             const defaultMemo = row.defaultMemo ?? ''
             const showingDefault = !!defaultMemo && draft.memo === defaultMemo
+            const split = needsOrder && draft.splits?.length ? draft.splits : null
+            const shares = split ? splitAmounts(row, split.map(part => part.supplyAmount)) : []
             return <tr key={row.id}>
               <td>{row.date}</td>
               <td className="card-accounting-store">{row.vendor || '-'}</td>
@@ -99,20 +106,25 @@ export default function CardAccountingModal({ mode, rows, entries, orders, onSub
               {mode === 'edit' && <td className="card-accounting-wide" data-label="상태"><select aria-label="상태" value={draft.status} onChange={event => update(row.id, { status: event.target.value as CardAccountingChoice })}>
                 {statusChoices.map(status => <option key={status} value={status}>{status}</option>)}
               </select></td>}
-              <td className="card-accounting-wide" data-label="수주번호">
+              {split ? <td className="card-accounting-wide card-split-summary" data-label="분할 회계반영" colSpan={2}>
+                <ul>{split.map((part, index) => <li key={index}><strong>{part.orderNo}</strong><span>{money(part.supplyAmount)}원 <small>(합계 {money(shares[index].amount)})</small></span><em>{part.memo || '-'}</em></li>)}</ul>
+                <button type="button" className="ghost-button card-split-button" disabled={saving} onClick={() => setSplitFor(row.id)}>분할 수정</button>
+                {invalid.has(row.id) && <small className="card-order-error" role="alert">{missingOrderMessage}</small>}
+              </td> : <><td className="card-accounting-wide" data-label="수주번호">
                 <div className="card-order-field">
                   <OrderNoField value={draft.orderNo} orders={sortedOrders} disabled={!needsOrder} invalid={invalid.has(row.id)}
                     onChange={orderNo => update(row.id, { orderNo })} onBlur={() => checkOrder(row.id)} />
                   <button type="button" className="ghost-button card-order-search" aria-label="수주번호 찾기" title="수주번호 찾기" disabled={!needsOrder} onClick={() => { setSearch(''); setPickerFor(row.id) }}>
                     <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" strokeWidth="2" /><path d="m16 16 4.5 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
                   </button>
+                  {canSplit(row) && <button type="button" className="ghost-button card-split-button" title="공급가액을 여러 수주로 나눠 회계반영" disabled={!needsOrder || saving} onClick={() => setSplitFor(row.id)}>분할</button>}
                 </div>
                 {invalid.has(row.id) && <small className="card-order-error" role="alert">{missingOrderMessage}</small>}
               </td>
               <td className="card-accounting-wide" data-label="내용"><input aria-label="내용" className={showingDefault ? 'card-memo-default' : undefined} title={showingDefault ? '클릭하면 지우고 새로 입력합니다' : undefined} value={draft.memo} disabled={draft.status === '미반영'} placeholder={defaultMemo || '내용'}
                 onFocus={() => { if (showingDefault) update(row.id, { memo: '' }) }}
                 onBlur={() => { if (defaultMemo && !draft.memo.trim()) update(row.id, { memo: defaultMemo }) }}
-                onChange={event => update(row.id, { memo: event.target.value })} /></td>
+                onChange={event => update(row.id, { memo: event.target.value })} /></td></>}
               {removable && <td className="card-accounting-remove"><button type="button" className="ghost-button card-row-remove" aria-label={`${row.date} ${row.vendor || ''} 빼기`} title="이번 회계반영에서 빼기 (미반영으로 남음)" disabled={saving} onClick={() => remove(row.id)}>×</button></td>}
             </tr>
           })}</tbody>
@@ -125,6 +137,14 @@ export default function CardAccountingModal({ mode, rows, entries, orders, onSub
         <button className="primary-button" type="submit" disabled={saving}>{saving ? '저장 중…' : mode === 'post' ? '회계반영' : '수정 저장'}</button>
       </div>
     </form>
+    {splitFor && (() => {
+      const row = rows.find(item => item.id === splitFor)
+      if (!row) return null
+      const draft = drafts[row.id]
+      return <SplitAccountingModal row={row} parts={draft.splits} orderNo={draft.orderNo} memo={draft.memo} orders={sortedOrders}
+        onClose={() => setSplitFor(null)}
+        onApply={parts => { setDrafts(current => { const next = { ...current[row.id], splits: parts ?? undefined }; if (!parts) delete next.splits; return { ...current, [row.id]: next } }); setInvalid(current => { const next = new Set(current); next.delete(row.id); return next }); setError(''); setSplitFor(null) }} />
+    })()}
     {pickerFor && <div className="modal-backdrop card-order-picker-backdrop" role="presentation" onClick={event => { if (event.target === event.currentTarget) setPickerFor(null) }}>
       <div className="modal-panel small-modal card-order-picker" role="dialog" aria-modal="true" aria-labelledby="card-order-picker-title">
         <div className="modal-heading"><div><h3 id="card-order-picker-title">수주번호 선택</h3><span>수주대장에서 선택하면 입력칸에 채워집니다.</span></div>

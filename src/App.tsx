@@ -29,7 +29,7 @@ import { moveWithinDate, newestFirstOrder } from './expenseOrder'
 import { PhotoAlbum, PurchaseOrderBoard } from './ProjectFiles'
 import { projectFolder } from './projectFileApi'
 import { useProjectFiles } from './useProjectFiles'
-import { syncEditedExpense, unlinkDeletedExpenses } from './cardAccounting'
+import { entryExpenseIds, entryOrderNos, syncEditedExpense, unlinkDeletedExpenses, withSplitSiblings } from './cardAccounting'
 import type { Order, SharedOrderStore } from './orderTypes'
 import type { CardAccounting, Expense, WorkLog, SharedWorkspaceStore, WorkspaceData } from './workspaceTypes'
 import { defaultOrders, defaultExpenses, defaultWorkLogs, defaultPurchaseOrders } from './sampleData'
@@ -761,7 +761,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   // Vendors with 5+ expenses since 2025 across every project are suggested in the 거래처 field.
   // 거래처명 정리 looks at every year and also reads where each name came from, so the tax
   // invoice and card spellings are kept.
-  const postedExpenseIds = new Set(cardAccounting.map(entry => entry.expenseId))
+  const postedExpenseIds = new Set(cardAccounting.flatMap(entryExpenseIds))
   const vendorUses = expenses.map(expense => ({ vendor: expense.vendor, source: postedExpenseIds.has(expense.id) && isTaxInvoiceKind(expense.kind) ? '전자세금계산서' as const : postedExpenseIds.has(expense.id) ? '법인카드' as const : '' as const }))
   const vendorSuggestionsSince = '2025-01-01'
   const expenseVendors = frequentVendors(vendorUses.filter((_, index) => expenses[index].date >= vendorSuggestionsSince))
@@ -989,7 +989,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     return saved
   }
   async function deleteResearchProject(project: ResearchProject) {
-    const used = expenses.some(expense => expense.projectId === project.id) || cardAccounting.some(entry => entry.orderNo.trim() === project.orderNo)
+    const used = expenses.some(expense => expense.projectId === project.id) || cardAccounting.some(entry => entryOrderNos(entry).includes(project.orderNo))
     if (used) { window.alert(`${project.orderNo} ${project.name}에는 지출내역이나 회계반영 내역이 있어 삭제할 수 없습니다. 지출을 먼저 옮기거나 삭제해 주세요.`); return }
     if (!window.confirm(`${project.orderNo} ${project.name}을(를) 삭제할까요?`)) return
     await updateWorkspace({ researchProjects: researchProjects.filter(other => other.id !== project.id) })
@@ -2115,13 +2115,30 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   async function deleteSelectedExpenses() {
     if (selectedExpenseIds.length === 0) return
 
+    // A share of a 분할 회계반영 goes together with the other shares of the same row.
+    const picked = new Set(selectedExpenseIds)
+    const deleted = withSplitSiblings(cardAccounting, picked)
+    const siblings = expenses.filter((expense) => deleted.has(expense.id) && !picked.has(expense.id))
+    const splitShares = cardAccounting.filter((entry) => entry.splits?.some((split) => picked.has(split.expenseId)))
+    const orderNoOfProject = (projectId: string) => {
+      const adminYear = adminYearOfProject(projectId)
+      return adminYear ? adminOrder(adminYear).orderNo : [...orders, ...researchOrders].find((order) => order.id === projectId)?.orderNo ?? '-'
+    }
     const canDelete = window.confirm(
-      `선택한 지출 ${selectedExpenseIds.length}건을 삭제할까요?`,
+      splitShares.length
+        ? [
+            `선택한 지출 ${selectedExpenseIds.length}건을 삭제할까요?`,
+            '',
+            `⚠ 분할 회계반영된 지출이 포함되어 있습니다. 같은 세금계산서·카드 내역에서 나뉜 지출은 모두 함께 삭제되고, 원래 내역(${splitShares.length}건)은 미반영으로 돌아갑니다.`,
+            ...(siblings.length
+              ? ['', `함께 삭제되는 다른 지출 ${siblings.length}건:`, ...siblings.map((expense) => `· ${orderNoOfProject(expense.projectId)}  ${expense.date}  ${expense.vendor}  ${expense.amount.toLocaleString('ko-KR')}원`)]
+              : []),
+          ].join('\n')
+        : `선택한 지출 ${selectedExpenseIds.length}건을 삭제할까요?`,
     )
     if (!canDelete) return
 
     // Removing a posted card or tax invoice expense also sends that row back to 미반영.
-    const deleted = new Set(selectedExpenseIds)
     const saved = await updateWorkspace({
       expenses: expenses.filter((expense) => !deleted.has(expense.id)),
       cardAccounting: unlinkDeletedExpenses(cardAccounting, deleted),
@@ -2272,7 +2289,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
               }
             : expense,
         ),
-        cardAccounting: syncEditedExpense(cardAccounting, { id: editingExpenseId, memo: expenseForm.memo }, orderNo),
+        cardAccounting: syncEditedExpense(cardAccounting, { id: editingExpenseId, memo: expenseForm.memo, supplyAmount }, orderNo),
       }, expenseEditRevision)
       if (!saved) return
       if (isResearchProject(expenseForm.projectId)) setSelectedResearchId(expenseForm.projectId)

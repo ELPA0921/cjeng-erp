@@ -41,6 +41,15 @@ test('card accounting defaults for older snapshots and rejects unknown statuses'
   assert.throws(()=>validateWorkspace({...empty(),cardAccounting:[forced,forced]}),/중복/)
 })
 
+test('분할 회계반영 keeps its shares and rejects malformed ones',()=>{
+  const splits=[{expenseId:'tax-a-1',orderNo:'26006',memo:'김포',supplyAmount:600000},{expenseId:'tax-a-2',orderNo:'26007',memo:'',supplyAmount:800000}]
+  const split={id:'a',status:'회계반영',orderNo:'26006, 26007',memo:'김포',updatedAt:'2026-11-16T00:00:00.000Z',splits}
+  assert.deepEqual(validateWorkspace({...empty(),cardAccounting:[split]}).cardAccounting,[split])
+  assert.throws(()=>validateWorkspace({...empty(),cardAccounting:[{...split,splits:[splits[0]]}]}),/분할/)
+  assert.throws(()=>validateWorkspace({...empty(),cardAccounting:[{...split,status:'강제회계반영'}]}),/분할/)
+  assert.throws(()=>validateWorkspace({...empty(),cardAccounting:[{...split,splits:[splits[0],{...splits[1],supplyAmount:'x'}]}]}),/분할 공급가액/)
+})
+
 test('연구비 numbers must be 269NN-style, named and used once', () => {
   const ok = validateWorkspace({ ...empty(), researchProjects: [{ id: 'research-a', orderNo: '26901', name: '필터 테스트' }] })
   assert.deepEqual(ok.researchProjects, [{ id: 'research-a', orderNo: '26901', name: '필터 테스트' }])

@@ -141,7 +141,7 @@ export function usePosting<T extends { id: string }>(rows: T[], { orders, expens
   </>
   const selectAll = <input type="checkbox" aria-label="보이는 항목 전체 선택" disabled={pageRows.length === 0} checked={pageRows.length > 0 && pageSelected === pageRows.length} ref={input => { if (input) input.indeterminate = pageSelected > 0 && pageSelected < pageRows.length }} onChange={event => togglePage(event.target.checked)} />
   const rowBox = (row: T, label: string) => <input type="checkbox" aria-label={`${label} 선택`} checked={selectedIds.has(row.id)} onChange={event => toggleRow(row.id, event.target.checked)} />
-  const statusChip = (row: T) => { const status = statusOf(row); return <span className={`card-accounting ${statusClass[status] ?? ''}`}>{status}</span> }
+  const statusChip = (row: T) => { const status = statusOf(row); const parts = entries.get(row.id)?.splits?.length; return <span className={`card-accounting ${statusClass[status] ?? ''}`} title={parts ? `${parts}개 수주로 나눠 반영했습니다` : undefined}>{status}{parts ? ` · 분할 ${parts}` : ''}</span> }
   const modalElement = modal && <CardAccountingModal mode={modal.mode} rows={modal.rows} entries={entries} orders={orders} onSubmit={submitModal} onClose={() => setModal(null)} onCreateOrder={onCreateOrder} onRemove={removeFromModal} />
   const sortHeader = (key: string, label: string) => <button className="sort-button" type="button" onClick={() => setSort(current => ({ key, direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' }))}>
     {label}{sort.key === key ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}
