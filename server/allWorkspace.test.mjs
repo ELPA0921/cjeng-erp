@@ -48,6 +48,10 @@ test('분할 회계반영 keeps its shares and rejects malformed ones',()=>{
   assert.throws(()=>validateWorkspace({...empty(),cardAccounting:[{...split,splits:[splits[0]]}]}),/분할/)
   assert.throws(()=>validateWorkspace({...empty(),cardAccounting:[{...split,status:'강제회계반영'}]}),/분할/)
   assert.throws(()=>validateWorkspace({...empty(),cardAccounting:[{...split,splits:[splits[0],{...splits[1],supplyAmount:'x'}]}]}),/분할 공급가액/)
+  const matched={...split,mode:'대조'}
+  assert.deepEqual(validateWorkspace({...empty(),cardAccounting:[matched]}).cardAccounting,[matched])
+  assert.throws(()=>validateWorkspace({...empty(),cardAccounting:[{...matched,mode:'기타'}]}),/대조/)
+  assert.throws(()=>validateWorkspace({...empty(),cardAccounting:[{id:'b',status:'강제회계반영',orderNo:'',memo:'',updatedAt:'x',mode:'대조'}]}),/대조/)
 })
 
 test('연구비 numbers must be 269NN-style, named and used once', () => {

@@ -2,7 +2,7 @@ import type { CardApproval } from './cardTypes.ts'
 import type { Order } from './orderTypes.ts'
 import type { CardAccounting, CardAccountingSplit, CardAccountingStatus, Expense } from './workspaceTypes.ts'
 import { cardSupplyAmount } from './cardAmounts.ts'
-import { adminOrder, adminOrders, adminYearOfOrderNo } from './adminExpenses.ts'
+import { adminOrder, adminOrders, adminYearOfOrderNo, adminYearOfProject } from './adminExpenses.ts'
 import { isResearchProject } from './researchExpenses.ts'
 
 // A Barobill row (card approval or purchase tax invoice) as the posting flow sees it.
@@ -97,6 +97,8 @@ const splitSummary = (splits: CardAccountingSplit[]) => ({
 /**
  * Applies the chosen status to each row. 회계반영 creates or updates the linked
  * expense on the order (one per share when split); 강제회계반영 and 미반영 remove them.
+ * A row matched against hand-entered expenses (지출 대조) only lets go of them instead: they
+ * were the user's own entries before the invoice arrived, so they are never deleted here.
  */
 export function applyCardAccounting(
   inputs: CardAccountingInput[],
@@ -108,30 +110,36 @@ export function applyCardAccounting(
   for (const input of inputs) {
     const { row, status, orderNo, memo } = input
     const previous = entries.get(row.id)
+    const matched = previous?.mode === '대조'
     const kept = new Set<string>()
-    const dropStale = () => { for (const id of previous ? entryExpenseIds(previous) : []) if (!kept.has(id)) expenses.delete(id) }
+    const dropStale = () => { if (!matched) for (const id of previous ? entryExpenseIds(previous) : []) if (!kept.has(id)) expenses.delete(id) }
     if (status === '미반영') { dropStale(); entries.delete(row.id); continue }
     const entry: CardAccounting = { id: row.id, status, orderNo: orderNo.trim(), memo: memo.trim(), updatedAt: now }
-    const base = (expenseId: string) => ({
-      ...expenses.get(expenseId),
-      id: expenseId,
-      date: row.date,
-      kind: row.kind,
-      vendor: row.vendor.trim() || row.kind,
-      ...(row.cardNumber ? { cardNumber: row.cardNumber } : {}),
-    })
+    const base = (expenseId: string) => {
+      const existing = expenses.get(expenseId)
+      return {
+        ...existing,
+        id: expenseId,
+        // A matched expense keeps the day it was entered for.
+        date: matched && existing ? existing.date : row.date,
+        kind: row.kind,
+        vendor: row.vendor.trim() || row.kind,
+        ...(row.cardNumber ? { cardNumber: row.cardNumber } : {}),
+      }
+    }
     if (isSplit(input)) {
       const parts = input.splits!
       const failure = splitError(row, parts, state.orders)
       if (failure) throw new Error(failure)
       const amounts = splitAmounts(row, parts.map(part => part.supplyAmount))
       entry.splits = parts.map((part, index) => {
-        const expenseId = `${postingExpenseId(row)}-${index + 1}`
+        const expenseId = (matched ? previous?.splits?.[index]?.expenseId : undefined) ?? `${postingExpenseId(row)}-${index + 1}`
         expenses.set(expenseId, { ...base(expenseId), projectId: findOrder(state.orders, part.orderNo)!.id, memo: part.memo.trim(), ...amounts[index] })
         kept.add(expenseId)
         return { expenseId, orderNo: part.orderNo.trim(), memo: part.memo.trim(), supplyAmount: part.supplyAmount }
       })
       Object.assign(entry, splitSummary(entry.splits))
+      if (matched) entry.mode = '대조'
     } else if (status === '회계반영') {
       const order = findOrder(state.orders, orderNo)
       if (!order) throw new Error(missingOrderMessage)
@@ -145,11 +153,98 @@ export function applyCardAccounting(
         amount: row.amount,
       })
       entry.expenseId = expenseId
+      if (matched && previous?.expenseId) entry.mode = '대조'
       kept.add(expenseId)
     }
     dropStale()
     entries.set(row.id, entry)
   }
+  return { cardAccounting: [...entries.values()], expenses: [...expenses.values()] }
+}
+
+/** The 수주번호 an expense is filed under ('' when its 공사 is unknown). */
+export function orderNoOfProject(orders: Order[], projectId: string) {
+  const adminYear = adminYearOfProject(projectId)
+  return adminYear ? adminOrder(adminYear).orderNo : orders.find(order => order.id === projectId)?.orderNo ?? ''
+}
+
+/**
+ * One line of 지출 대조: an expense entered by hand earlier (expenseId), or one added in the
+ * match window to fill a gap (no expenseId: then date and orderNo say where it goes).
+ */
+export type MatchLine = { expenseId?: string; date: string; orderNo: string; memo: string; supplyAmount: number; amount: number }
+
+// Shares a whole out in proportion to the weights; the last share takes the rounding.
+function shareOut(total: number, weights: number[]) {
+  const sum = weights.reduce((acc, weight) => acc + weight, 0)
+  let left = total
+  return weights.map((weight, index) => {
+    if (index === weights.length - 1) return left
+    const share = sum ? Math.round(total * weight / sum) : 0
+    left -= share
+    return share
+  })
+}
+
+/** How a match stands against the invoice: totals of the lines and the differences. */
+export function matchTotals(row: Pick<PostingSource, 'supplyAmount' | 'amount'>, lines: Pick<MatchLine, 'supplyAmount' | 'amount'>[]) {
+  const supply = lines.reduce((acc, line) => acc + line.supplyAmount, 0)
+  const amount = lines.reduce((acc, line) => acc + line.amount, 0)
+  const supplyDiff = supply - (row.supplyAmount ?? 0), amountDiff = amount - row.amount
+  // Either total matching is enough: 부가세 rounded per line can differ by a few 원 from the invoice's.
+  return { supply, amount, supplyDiff, amountDiff, matches: lines.length > 0 && (supplyDiff === 0 || amountDiff === 0) }
+}
+
+/**
+ * 지출 대조 → 분할회계반영: a month's tax invoice covers expenses already entered one by one.
+ * Once their total matches the invoice, the invoice is posted onto those same expenses:
+ * each keeps its day, 공사 and 내용, and takes its share of the invoice's 공급가액, 부가세 and
+ * 합계 (so they add up to the invoice exactly) along with its 거래처 and 구분.
+ */
+export function applyInvoiceMatch(
+  row: PostingSource,
+  lines: MatchLine[],
+  state: { cardAccounting: CardAccounting[]; expenses: Expense[]; orders: Order[] },
+  now = new Date().toISOString(),
+) {
+  const totals = matchTotals(row, lines)
+  if (!totals.matches) throw new Error('선택한 지출의 합계가 세금계산서 금액과 맞지 않습니다.')
+  const entries = new Map(state.cardAccounting.map(entry => [entry.id, entry]))
+  const expenses = new Map(state.expenses.map(expense => [expense.id, expense]))
+  const previous = entries.get(row.id)
+  const linkedElsewhere = new Set(state.cardAccounting.filter(entry => entry.id !== row.id).flatMap(entryExpenseIds))
+  if (lines.some(line => line.expenseId && linkedElsewhere.has(line.expenseId))) throw new Error('다른 세금계산서·카드 내역에 이미 반영된 지출이 있습니다.')
+  if (lines.some(line => !line.orderNo.trim() || (!line.expenseId && !findOrder(state.orders, line.orderNo)))) throw new Error(missingOrderMessage)
+  const supplies = totals.supplyDiff === 0 ? lines.map(line => line.supplyAmount) : shareOut(row.supplyAmount ?? 0, lines.map(line => line.amount))
+  const amounts = splitAmounts(row, supplies)
+  const ids = new Set(expenses.keys())
+  const splits: CardAccountingSplit[] = lines.map((line, index) => {
+    let expenseId = line.expenseId
+    if (!expenseId) { let n = index + 1; do expenseId = `${postingExpenseId(row)}-m${n++}`; while (ids.has(expenseId)); ids.add(expenseId) }
+    const existing = expenses.get(expenseId)
+    const next: Expense = {
+      ...existing,
+      id: expenseId,
+      projectId: existing?.projectId ?? findOrder(state.orders, line.orderNo)!.id,
+      date: existing?.date ?? line.date,
+      kind: row.kind,
+      vendor: row.vendor.trim() || row.kind,
+      memo: line.memo.trim(),
+      ...amounts[index],
+    }
+    // The 구분 is now the invoice's, so a card number typed earlier no longer applies.
+    if (row.cardNumber) next.cardNumber = row.cardNumber
+    else delete next.cardNumber
+    expenses.set(expenseId, next)
+    return { expenseId, orderNo: line.orderNo.trim(), memo: line.memo.trim(), supplyAmount: supplies[index] }
+  })
+  // Expenses the invoice no longer covers: hand-entered ones stay, ones the posting made go.
+  const keep = new Set(splits.map(split => split.expenseId))
+  if (previous && previous.mode !== '대조') for (const id of entryExpenseIds(previous)) if (!keep.has(id)) expenses.delete(id)
+  const entry: CardAccounting = splits.length === 1
+    ? { id: row.id, status: '회계반영', orderNo: splits[0].orderNo, memo: splits[0].memo, updatedAt: now, expenseId: splits[0].expenseId, mode: '대조' }
+    : { id: row.id, status: '회계반영', ...splitSummary(splits), updatedAt: now, splits, mode: '대조' }
+  entries.set(row.id, entry)
   return { cardAccounting: [...entries.values()], expenses: [...expenses.values()] }
 }
 
@@ -160,16 +255,19 @@ export function unlinkDeletedExpenses(cardAccounting: CardAccounting[], deletedE
 
 /**
  * The shares of a split are deleted together: deleting any one of them takes the others along,
- * since the source row goes back to 미반영 as a whole.
+ * since the source row goes back to 미반영 as a whole. Matched (지출 대조) expenses are the
+ * user's own entries, so only the one picked goes; the others stay and are just unlinked.
  */
 export function withSplitSiblings(cardAccounting: CardAccounting[], expenseIds: Set<string>) {
   const all = new Set(expenseIds)
   for (const entry of cardAccounting) {
+    if (entry.mode === '대조') continue
     const ids = entry.splits?.map(split => split.expenseId) ?? []
     if (ids.some(id => expenseIds.has(id))) for (const id of ids) all.add(id)
   }
   return all
 }
+
 
 /** Editing a posted expense keeps its source row's 수주번호 and 내용 (and a share's 공급가액) in step. */
 export function syncEditedExpense(cardAccounting: CardAccounting[], expense: Pick<Expense, 'id' | 'memo'> & { supplyAmount?: number }, orderNo: string, now = new Date().toISOString()) {

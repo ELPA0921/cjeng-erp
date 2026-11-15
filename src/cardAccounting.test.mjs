@@ -107,3 +107,68 @@ test('분할 회계반영 shares one invoice over several orders and the shares 
   const reverted = applyCardAccounting([{ row: invoice, status: '미반영', orderNo: '', memo: '' }], { ...split, orders })
   assert.deepEqual(reverted, { cardAccounting: [], expenses: [] })
 })
+
+test('지출 대조 posts a month\'s invoice onto the expenses entered by hand, keeping them', async () => {
+  const { applyInvoiceMatch, matchTotals, withSplitSiblings, unlinkDeletedExpenses } = await import('./cardAccounting.ts')
+  const invoice = { id: 'inv-m', date: '2026-10-31', vendor: '(주)승우레이져', supplyAmount: 100000, vatAmount: 10000, amount: 110000, kind: '전자세금계산서', cardNumber: '' }
+  const handA = { id: 'hand-a', projectId: 'o-1', date: '2026-10-05', kind: '전자세금계산서', vendor: '승우레이져', memo: 'STS 가공', supplyAmount: 30000, vatAmount: 3000, amount: 33000, sequence: 2 }
+  const handB = { id: 'hand-b', projectId: 'o-2', date: '2026-10-20', kind: '현금', vendor: '승우 레이져', memo: '벤딩', cardNumber: '1234', amount: 55000 }
+  const lines = [
+    { expenseId: 'hand-a', date: handA.date, orderNo: '26006', memo: 'STS 가공', supplyAmount: 30000, amount: 33000 },
+    { expenseId: 'hand-b', date: handB.date, orderNo: '26007', memo: '벤딩', supplyAmount: 50000, amount: 55000 },
+  ]
+  // 20,000 short: the window shows the gap and saving is refused.
+  assert.equal(matchTotals(invoice, lines).supplyDiff, -20000)
+  assert.equal(matchTotals(invoice, lines).matches, false)
+  assert.throws(() => applyInvoiceMatch(invoice, lines, { cardAccounting: [], expenses: [handA, handB], orders }), /맞지 않습니다/)
+
+  // A missing line is added for 26006; now it matches.
+  const full = [...lines, { date: '2026-10-28', orderNo: '26006', memo: '추가 가공', supplyAmount: 20000, amount: 22000 }]
+  assert.equal(matchTotals(invoice, full).matches, true)
+  const posted = applyInvoiceMatch(invoice, full, { cardAccounting: [], expenses: [handA, handB], orders }, 'T1')
+  const byId = Object.fromEntries(posted.expenses.map(e => [e.id, e]))
+  assert.deepEqual(byId['hand-a'], { ...handA, kind: '전자세금계산서', vendor: '(주)승우레이져', vatAmount: 3000, amount: 33000 })
+  assert.equal(byId['hand-b'].date, '2026-10-20')
+  assert.equal(byId['hand-b'].projectId, 'o-2')
+  assert.equal(byId['hand-b'].cardNumber, undefined)
+  assert.equal(byId['hand-b'].kind, '전자세금계산서')
+  assert.equal(byId['tax-inv-m-m3'].projectId, 'o-1')
+  assert.equal(byId['tax-inv-m-m3'].date, '2026-10-28')
+  assert.equal(posted.expenses.reduce((sum, e) => sum + e.amount, 0), 110000)
+  const entry = posted.cardAccounting[0]
+  assert.equal(entry.mode, '대조')
+  assert.equal(entry.orderNo, '26006, 26007')
+  assert.deepEqual(entry.splits.map(s => s.expenseId), ['hand-a', 'hand-b', 'tax-inv-m-m3'])
+
+  // Deleting one matched expense leaves the others and unlinks the invoice.
+  const gone = withSplitSiblings(posted.cardAccounting, new Set(['hand-a']))
+  assert.deepEqual([...gone], ['hand-a'])
+  assert.deepEqual(unlinkDeletedExpenses(posted.cardAccounting, gone), [])
+
+  // Sending a matched invoice back to 미반영 keeps every hand-entered expense.
+  const reverted = applyCardAccounting([{ row: invoice, status: '미반영', orderNo: '', memo: '' }], { ...posted, orders })
+  assert.deepEqual(reverted.cardAccounting, [])
+  assert.equal(reverted.expenses.length, 3)
+
+  // Saving the 수정 window unchanged keeps the same expenses and their days.
+  const resaved = applyCardAccounting([{ row: invoice, status: '회계반영', orderNo: entry.orderNo, memo: entry.memo, splits: entry.splits.map(({ orderNo, memo, supplyAmount }) => ({ orderNo, memo, supplyAmount })) }], { ...posted, orders }, 'T2')
+  assert.deepEqual(resaved.expenses.map(e => [e.id, e.date]).sort(), posted.expenses.map(e => [e.id, e.date]).sort())
+  assert.equal(resaved.cardAccounting[0].mode, '대조')
+
+  // An expense already linked to another invoice cannot be counted twice.
+  assert.throws(() => applyInvoiceMatch({ ...invoice, id: 'inv-other' }, full, { ...posted, orders }), /이미 반영된/)
+})
+
+test('지출 대조 also matches on 합계 when per-line 부가세 rounding moves 공급가액', async () => {
+  const { applyInvoiceMatch } = await import('./cardAccounting.ts')
+  const invoice = { id: 'inv-r', date: '2026-10-31', vendor: 'v', supplyAmount: 1000, vatAmount: 100, amount: 1100, kind: '전자세금계산서', cardNumber: '' }
+  const a = { id: 'a', projectId: 'o-1', date: '2026-10-01', kind: '전자세금계산서', vendor: 'v', memo: '', amount: 550 }
+  const b = { id: 'b', projectId: 'o-1', date: '2026-10-02', kind: '전자세금계산서', vendor: 'v', memo: '', amount: 550 }
+  const lines = [{ expenseId: 'a', date: a.date, orderNo: '26006', memo: '', supplyAmount: 501, amount: 550 }, { expenseId: 'b', date: b.date, orderNo: '26006', memo: '', supplyAmount: 501, amount: 550 }]
+  const posted = applyInvoiceMatch(invoice, lines, { cardAccounting: [], expenses: [a, b], orders })
+  assert.deepEqual(posted.expenses.map(e => [e.supplyAmount, e.vatAmount, e.amount]), [[500, 50, 550], [500, 50, 550]])
+  // A single matched expense is linked directly, without shares.
+  const one = applyInvoiceMatch({ ...invoice, amount: 550, supplyAmount: 500, vatAmount: 50 }, [lines[0]], { cardAccounting: [], expenses: [a], orders })
+  assert.deepEqual(one.cardAccounting[0].expenseId, 'a')
+  assert.equal(one.cardAccounting[0].splits, undefined)
+})

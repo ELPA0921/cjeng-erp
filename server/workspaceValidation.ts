@@ -186,8 +186,11 @@ export function validateCollection(name: WorkspaceCollection, value: unknown) {
     return projects
   }
   // Older shared snapshots predate card accounting, so a missing list means nothing has been posted yet.
-  const cardAccounting=records(value ?? [],['status','orderNo','memo','expenseId','updatedAt'],[],['status','orderNo','memo','updatedAt'],[])
-  for (const row of cardAccounting) if (!(cardAccountingStatuses as readonly string[]).includes(String(row.status))) throw new Error('회계반영 상태를 확인하세요.')
+  const cardAccounting=records(value ?? [],['status','orderNo','memo','expenseId','updatedAt','mode'],[],['status','orderNo','memo','updatedAt'],[])
+  for (const row of cardAccounting) {
+    if (!(cardAccountingStatuses as readonly string[]).includes(String(row.status))) throw new Error('회계반영 상태를 확인하세요.')
+    if (row.mode !== undefined && (row.mode !== '대조' || row.status !== '회계반영')) throw new Error('지출 대조 반영 내용을 확인하세요.')
+  }
   // 분할 회계반영 keeps one share per order: its expense, order number, 내용 and 공급가액.
   const raw = rows(value ?? [])
   return cardAccounting.map((row, index) => {

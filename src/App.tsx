@@ -2112,17 +2112,24 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     const picked = new Set(selectedExpenseIds)
     const deleted = withSplitSiblings(cardAccounting, picked)
     const siblings = expenses.filter((expense) => deleted.has(expense.id) && !picked.has(expense.id))
-    const splitShares = cardAccounting.filter((entry) => entry.splits?.some((split) => picked.has(split.expenseId)))
+    const splitShares = cardAccounting.filter((entry) => entry.mode !== '대조' && entry.splits?.some((split) => picked.has(split.expenseId)))
+    // Expenses matched to a month's invoice (지출 대조) are the user's own: only the picked ones go, and the invoice is unlinked.
+    const matchedEntries = cardAccounting.filter((entry) => entry.mode === '대조' && entryExpenseIds(entry).some((id) => picked.has(id)))
+    const matchedOthers = matchedEntries.reduce((count, entry) => count + entryExpenseIds(entry).filter((id) => !picked.has(id)).length, 0)
     const orderNoOfProject = (projectId: string) => {
       const adminYear = adminYearOfProject(projectId)
       return adminYear ? adminOrder(adminYear).orderNo : [...orders, ...researchOrders].find((order) => order.id === projectId)?.orderNo ?? '-'
     }
     const canDelete = window.confirm(
-      splitShares.length
+      splitShares.length || matchedEntries.length
         ? [
             `선택한 지출 ${selectedExpenseIds.length}건을 삭제할까요?`,
-            '',
-            `⚠ 분할 회계반영된 지출이 포함되어 있습니다. 같은 세금계산서·카드 내역에서 나뉜 지출은 모두 함께 삭제되고, 원래 내역(${splitShares.length}건)은 미반영으로 돌아갑니다.`,
+            ...(matchedEntries.length
+              ? ['', `⚠ 세금계산서와 대조해 분할회계반영된 지출이 포함되어 있습니다. 해당 세금계산서(${matchedEntries.length}건)는 미반영으로 돌아갑니다.${matchedOthers ? ` 같은 세금계산서에 연결돼 있던 다른 지출 ${matchedOthers}건은 삭제되지 않고 그대로 남습니다.` : ''}`]
+              : []),
+            ...(splitShares.length
+              ? ['', `⚠ 분할 회계반영된 지출이 포함되어 있습니다. 같은 세금계산서·카드 내역에서 나뉜 지출은 모두 함께 삭제되고, 원래 내역(${splitShares.length}건)은 미반영으로 돌아갑니다.`]
+              : []),
             ...(siblings.length
               ? ['', `함께 삭제되는 다른 지출 ${siblings.length}건:`, ...siblings.map((expense) => `· ${orderNoOfProject(expense.projectId)}  ${expense.date}  ${expense.vendor}  ${expense.amount.toLocaleString('ko-KR')}원`)]
               : []),

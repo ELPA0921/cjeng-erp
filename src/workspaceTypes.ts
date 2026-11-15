@@ -61,6 +61,11 @@ export type CardAccounting = {
   updatedAt: string
   /** 분할 회계반영: the row's 공급가액 shared out over several orders, one expense each. */
   splits?: CardAccountingSplit[]
+  /**
+   * '대조': the row was matched against expenses entered by hand beforehand (a month's tax
+   * invoice); those expenses belong to the user, so undoing the posting only unlinks them.
+   */
+  mode?: '대조'
 }
 export type CardAccountingSplit = { expenseId: string; orderNo: string; memo: string; supplyAmount: number }
 

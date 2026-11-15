@@ -1,9 +1,11 @@
 import { useRef, useState } from 'react'
 import type { Order } from './orderTypes'
 import type { CardAccounting, Expense, WorkspaceData } from './workspaceTypes'
-import { applyCardAccounting, canSplit, postingOrders, type CardAccountingInput, type PostingSource, type SplitPart } from './cardAccounting'
+import { applyCardAccounting, applyInvoiceMatch, canSplit, postingOrders, type CardAccountingInput, type MatchLine, type PostingSource, type SplitPart } from './cardAccounting'
 import CardAccountingModal from './CardAccountingModal'
 import SplitAccountingModal from './SplitAccountingModal'
+import SplitChoiceModal from './SplitChoiceModal'
+import InvoiceMatchModal from './InvoiceMatchModal'
 
 const statusClass: Record<string, string> = { 회계반영: 'is-posted', 분할회계반영: 'is-split', 강제회계반영: 'is-forced' }
 // 분할회계반영 is a 회계반영 shared over several orders; it is listed on its own.
@@ -41,6 +43,8 @@ export function usePosting<T extends { id: string }>(rows: T[], { orders, expens
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [modal, setModal] = useState<{ mode: 'post' | 'edit'; rows: PostingSource[] } | null>(null)
   const [splitRow, setSplitRow] = useState<PostingSource | null>(null)
+  // A tax invoice first asks how to split: match it against expenses entered by hand, or split anew.
+  const [splitStep, setSplitStep] = useState<'choose' | 'match' | 'split'>('split')
   const [notice, setNotice] = useState('')
   const [filter, setFilter] = useState<Filter>('미반영')
   const [savingForced, setSavingForced] = useState(false)
@@ -99,7 +103,17 @@ export function usePosting<T extends { id: string }>(rows: T[], { orders, expens
     const row = toSource(selectedRows[0])
     if (!canSplit(row)) { setNotice('공급가액이 없는 항목은 분할회계반영할 수 없습니다.'); return }
     setNotice('')
+    setSplitStep(row.kind === '전자세금계산서' ? 'choose' : 'split')
     setSplitRow(row)
+  }
+  async function saveMatch(lines: MatchLine[]) {
+    if (!splitRow) return null
+    try { if (!await onSave(applyInvoiceMatch(splitRow, lines, { cardAccounting, expenses, orders }))) return '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.' }
+    catch (err) { return err instanceof Error ? err.message : '저장하지 못했습니다.' }
+    setNotice(`지출 ${lines.length}건을 세금계산서와 대조해 분할회계반영했습니다.`)
+    setSplitRow(null)
+    setSelectedIds(new Set())
+    return null
   }
   async function saveSplit(parts: SplitPart[]) {
     if (!splitRow) return null
@@ -164,7 +178,10 @@ export function usePosting<T extends { id: string }>(rows: T[], { orders, expens
   const rowBox = (row: T, label: string) => <input type="checkbox" aria-label={`${label} 선택`} checked={selectedIds.has(row.id)} onChange={event => toggleRow(row.id, event.target.checked)} />
   const statusChip = (row: T) => { const status = statusOf(row); const parts = entries.get(row.id)?.splits?.length; return <span className={`card-accounting ${statusClass[status] ?? ''}`} title={parts ? `${parts}개 수주로 나눠 반영했습니다` : undefined}>{status}</span> }
   const splitEntry = splitRow ? entries.get(splitRow.id) : undefined
-  const splitElement = splitRow && <SplitAccountingModal row={splitRow} orders={postingOrders(orders)}
+  const splitElement = !splitRow ? null
+    : splitStep === 'choose' ? <SplitChoiceModal row={splitRow} onMatch={() => setSplitStep('match')} onSplit={() => setSplitStep('split')} onClose={() => setSplitRow(null)} />
+    : splitStep === 'match' ? <InvoiceMatchModal row={splitRow} expenses={expenses} cardAccounting={cardAccounting} orders={postingOrders(orders)} onSave={saveMatch} onBack={() => setSplitStep('choose')} onClose={() => setSplitRow(null)} />
+    : <SplitAccountingModal row={splitRow} orders={postingOrders(orders)}
     parts={splitEntry?.splits?.map(({ orderNo, memo, supplyAmount }) => ({ orderNo, memo, supplyAmount }))}
     orderNo={splitEntry?.status === '회계반영' ? splitEntry.orderNo : ''} memo={splitEntry?.memo || splitRow.defaultMemo || ''}
     onSave={saveSplit} onClose={() => setSplitRow(null)} />
