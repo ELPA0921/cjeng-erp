@@ -612,6 +612,9 @@ function compareText(a: string | number, b: string | number) {
   })
 }
 
+/** Years newest first for the year picker; anything that is not a year (기타) goes last. */
+const yearsNewestFirst = (years: string[]) => [...years].sort((a, b) => Number(!/^\d{4}$/.test(a)) - Number(!/^\d{4}$/.test(b)) || b.localeCompare(a))
+
 function getSortDirectionLabel(
   active: boolean,
   direction: SortDirection,
@@ -2558,9 +2561,9 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
               view === 'expenses' ||
               view === 'adminExpenses' ||
               view === 'researchExpenses' ? (
-              <YearPicker ariaLabel="수주년도" value={orderYear} options={orderYears.map((year) => ({ value: year, label: year }))} onChange={switchOrderYear} />
+              <YearPicker ariaLabel="수주년도" value={orderYear} options={yearsNewestFirst(orderYears).map((year) => ({ value: year, label: year }))} onChange={switchOrderYear} />
             ) : view === 'legacyExpenses' ? (
-              <YearPicker ariaLabel="22년 이전 년도" value={legacyYear} options={legacyYears.map((year) => ({ value: year, label: year }))}
+              <YearPicker ariaLabel="22년 이전 년도" value={legacyYear} options={yearsNewestFirst(legacyYears).map((year) => ({ value: year, label: year }))}
                 onChange={(year) => selectProject(legacy.find(project => project.year === year)?.order.id ?? legacyProjectId)} />
             ) : view === 'worklogList' ? (
               <>
