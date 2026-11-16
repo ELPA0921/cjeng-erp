@@ -5,6 +5,8 @@ import './App.css'
 import './design.css'
 import { getWorkCategory, workCategories, workProjectLabel, type WorkCategory } from './workLogCategories'
 import DeliveryPerformance from './DeliveryPerformance'
+import FreightExpenses from './FreightExpenses'
+import { freightCategories, guessFreight } from './freightRules'
 import CorporateCards from './CorporateCards'
 import Estimates from './Estimates'
 import TaxInvoices from './TaxInvoices'
@@ -64,6 +66,7 @@ const expenseMenus = [
   ['adminExpenses', '관리비 지출내역'],
   ['researchExpenses', '연구비 지출내역'],
   ['legacyExpenses', '22년 이전 지출내역'],
+  ['freight', '화물·운반비 내역'],
   ['taxInvoices', '전자세금계산서 조회'],
   ['corporateCards', '법인카드 조회'],
 ] as const
@@ -751,6 +754,12 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   const researchProjects = workspaceStore?.data.researchProjects ?? localResearchProjects
   // 연구비 numbers stand in for orders wherever an order number is entered (회계반영) or shown.
   const researchOrders = researchProjects.map(researchOrder)
+  const projectLabelOf = (projectId: string) => {
+    const adminYear = adminYearOfProject(projectId)
+    if (adminYear) return { orderNo: adminOrder(adminYear).orderNo, name: '관리비' }
+    const order = [...orders, ...researchOrders].find(item => item.id === projectId)
+    return order ? { orderNo: order.orderNo, name: order.projectName } : { orderNo: '-', name: '' }
+  }
   // Vendors with 5+ expenses since 2025 across every project are suggested in the 거래처 field.
   // 거래처명 정리 looks at every year and also reads where each name came from, so the tax
   // invoice and card spellings are kept.
@@ -804,6 +813,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     memo: '',
     cardNumber: '',
     note: '',
+      freight: '',
     supplyAmount: '',
     vatAmount: '',
     amount: '',
@@ -2095,6 +2105,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
       memo: expense.memo,
       cardNumber: expense.cardNumber ?? '',
       note: expense.note ?? '',
+      freight: expense.freight ?? '',
       supplyAmount: String(getExpenseSupplyAmount(expense)),
       vatAmount: String(getExpenseVatAmount(expense)),
       amount: String(expense.amount),
@@ -2161,6 +2172,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
       memo: '',
       cardNumber: '',
       note: '',
+      freight: '',
       supplyAmount: '',
       vatAmount: '',
       amount: '',
@@ -2194,6 +2206,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
       memo: '',
       cardNumber: '',
       note: '',
+      freight: '',
       supplyAmount: '',
       vatAmount: '',
       amount: '',
@@ -2283,6 +2296,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                 memo: expenseForm.memo,
                 cardNumber,
                 note: expenseForm.note.trim() || undefined,
+                freight: expenseForm.freight || undefined,
                 supplyAmount,
                 vatAmount,
                 amount,
@@ -2305,6 +2319,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
         memo: '',
         cardNumber: '',
         note: '',
+      freight: '',
         supplyAmount: '',
         vatAmount: '',
         amount: '',
@@ -2326,6 +2341,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
         memo: expenseForm.memo,
         cardNumber,
         note: expenseForm.note.trim() || undefined,
+        freight: expenseForm.freight || undefined,
         supplyAmount,
         vatAmount,
         amount,
@@ -2343,6 +2359,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
       memo: '',
       cardNumber: '',
       note: '',
+      freight: '',
       supplyAmount: '',
       vatAmount: '',
       amount: '',
@@ -2491,7 +2508,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                         : '작업일보'}
             </p>
             <h2>
-              {view === 'taxInvoices' ? '전자세금계산서 조회' : view === 'corporateCards' ? '법인카드 조회' : view === 'estimateCosts' ? '자재비용' : view === 'estimates' ? '견적서 제작' : tradeMenus.find(([screen]) => screen === view)?.[1] ?? (view === 'home'
+              {view === 'freight' ? '화물·운반비 내역' : view === 'taxInvoices' ? '전자세금계산서 조회' : view === 'corporateCards' ? '법인카드 조회' : view === 'estimateCosts' ? '자재비용' : view === 'estimates' ? '견적서 제작' : tradeMenus.find(([screen]) => screen === view)?.[1] ?? (view === 'home'
                 ? '전체 현황'
                 : view === 'orders'
                 ? `${orderYear}년 수주대장`
@@ -2564,7 +2581,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                   {workLogListYear === 'all' ? '전체년도' : `${workLogListYear}년`}
                 </span>
               </>
-            ) : view === 'worklogs' || view === 'taxInvoices' || view === 'corporateCards' || view === 'estimates' || view === 'estimateCosts' ? null : (
+            ) : view === 'worklogs' || view === 'freight' || view === 'taxInvoices' || view === 'corporateCards' || view === 'estimates' || view === 'estimateCosts' ? null : (
               <>
                 <span>{selectedProject?.orderNo}</span>
                 <span>{selectedProject?.client1}</span>
@@ -2594,6 +2611,12 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
             onCreateOrder={openNewOrderModalFor}
           />}
 
+        {view === 'freight' && <FreightExpenses
+            expenses={expenses}
+            projectLabel={projectLabelOf}
+            initialYear={today.slice(0, 4)}
+            onSave={next => updateWorkspace({ expenses: next })}
+          />}
         {view === 'deliveries' && <DeliveryPerformance workspaceStore={workspaceStore} />}
         {(view === 'estimateCosts' || view === 'estimates') && <Estimates workspaceStore={workspaceStore} screen={view === 'estimateCosts' ? 'costs' : 'estimates'} vendors={expenseVendors} onOpenCosts={() => navigateTo('estimateCosts')} />}
         {view === 'home' && (
@@ -4108,6 +4131,18 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                       }
                       placeholder="인쇄 시 비고란에 표시"
                     />
+                  </label>
+                  {/* 화물·운반비 내역: guessed from 거래처·내용 unless picked here. */}
+                  <label>
+                    화물·운반비
+                    <select
+                      value={expenseForm.freight}
+                      onChange={(event) => setExpenseForm({ ...expenseForm, freight: event.target.value })}
+                    >
+                      <option value="">{(() => { const guess = guessFreight(expenseForm); return guess ? `자동 — ${guess}(으)로 화물·운반비 내역에 등록` : '자동 — 해당없음' })()}</option>
+                      {freightCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+                      <option value="제외">제외 (화물·운반비 내역에 넣지 않음)</option>
+                    </select>
                   </label>
                   <div className="modal-actions">
                     <button

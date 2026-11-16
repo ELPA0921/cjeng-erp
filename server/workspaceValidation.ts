@@ -1,5 +1,6 @@
 import { cardAccountingStatuses, type WorkspaceData } from '../src/workspaceTypes.ts'
 import { costKinds, grades, quoteGrades, steelShapes } from '../src/estimateTypes.ts'
+import { isFreightSetting } from '../src/freightRules.ts'
 import { packWorkspace, unpackExpense, unpackWorkLog } from './workspaceCodec.ts'
 
 const vendorFields = ['company','contact','mobile','tel','fax','email','address','item']
@@ -145,8 +146,11 @@ export type WorkspaceSetting = typeof workspaceSettings[number]
 export function validateCollection(name: WorkspaceCollection, value: unknown) {
   if (name === 'expenses') {
     const rows = Array.isArray(value) ? value.map(unpackExpense) : value
-    const expenses=records(rows,['projectId','date','kind','vendor','category','memo','cardNumber','note'],['supplyAmount','vatAmount','amount','sequence'],['projectId','date','kind','vendor','memo','amount'],['date'])
-    for (const expense of expenses) if (expense.kind === '세금계산서') expense.kind = '전자세금계산서'
+    const expenses=records(rows,['projectId','date','kind','vendor','category','memo','cardNumber','note','freight'],['supplyAmount','vatAmount','amount','sequence'],['projectId','date','kind','vendor','memo','amount'],['date'])
+    for (const expense of expenses) {
+      if (expense.kind === '세금계산서') expense.kind = '전자세금계산서'
+      if (expense.freight !== undefined && !isFreightSetting(expense.freight)) throw new Error('화물·운반비 구분을 확인하세요.')
+    }
     return expenses
   }
   if (name === 'workLogs') {

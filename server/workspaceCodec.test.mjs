@@ -55,3 +55,11 @@ test('an expense 비고 survives packing, unpacking and validation', () => {
   assert.deepEqual(unpackExpense(row), expense)
   assert.deepEqual(validateCollection('expenses', [row]), [expense])
 })
+
+test('an expense 화물·운반비 구분 survives packing and validation, and only known values are taken', () => {
+  const expense = { id: 'e1', projectId: 'p1', date: '2026-11-16', kind: '전자세금계산서', vendor: '신진렌탈', memo: '고소작업대', amount: 66000, freight: '크레인' }
+  const [row] = packWorkspace({ expenses: [expense], workLogs: [] }).expenses
+  assert.deepEqual(validateCollection('expenses', [row]), [expense])
+  assert.deepEqual(validateCollection('expenses', [{ ...expense, freight: '제외' }]), [{ ...expense, freight: '제외' }])
+  assert.throws(() => validateCollection('expenses', [{ ...expense, freight: '굴삭기' }]))
+})
