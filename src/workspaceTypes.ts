@@ -18,7 +18,7 @@ export type Expense = {
   amount: number
   /** Position among the same project's expenses on the same date, once someone arranges them. */
   sequence?: number
-  /** 화물·운반비 내역: a category set by hand ('크레인', '지게차', '화물차', '택배') or '제외'; unset means guessed. */
+  /** 장비·운반비 내역: a category set by hand ('크레인', '지게차', '화물차') or '제외'; unset means guessed. */
   freight?: string
 }
 

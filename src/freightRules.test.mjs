@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { freightOf, guessFreight } from './freightRules.ts'
+import { freightOf, guessFreight, isFreightSetting } from './freightRules.ts'
 
 const e = (vendor, memo, freight) => ({ vendor, memo, ...(freight ? { freight } : {}) })
 
@@ -13,14 +13,15 @@ test('crane and forklift rentals are guessed from the vendor or the memo', () =>
   assert.equal(guessFreight(e('（유）부안화물', '장비대(지게차)')), '지게차')
 })
 
-test('parcel services are told apart from trucks', () => {
-  assert.equal(guessFreight(e('함안 대신화물', '산기관 택배비')), '택배')
-  assert.equal(guessFreight(e('대신정기화물（주）', '핸드레일빠찌')), '택배')
-  assert.equal(guessFreight(e('양촌 경동화물', '고압선')), '택배')
+test('trucks are 운반비, while parcel services are left out', () => {
   assert.equal(guessFreight(e('개별화물', '운반비(공장->영광)')), '화물차')
   assert.equal(guessFreight(e('무림통운', '김포 -> 부안')), '화물차')
   assert.equal(guessFreight(e('양일상운', '운반비')), '화물차')
   assert.equal(guessFreight(e('한국통운물류', '운송비')), '화물차')
+  assert.equal(guessFreight(e('함안 대신화물', '산기관 택배비')), null)
+  assert.equal(guessFreight(e('대신정기화물（주）', '핸드레일빠찌')), null)
+  assert.equal(guessFreight(e('양촌 경동화물', '고압선')), null)
+  assert.equal(guessFreight(e('우정사업본부(우체국)', '명함 택배')), null)
 })
 
 test('other expenses are left out, and quick couplings are not 퀵서비스', () => {
@@ -33,4 +34,5 @@ test('a category picked by hand wins over the guess, and 제외 keeps it off the
   assert.equal(freightOf(e('신진렌탈', '고소작업대 임대', '크레인')), '크레인')
   assert.equal(freightOf(e('다이소', '화물차 와이어부러쉬', '제외')), null)
   assert.equal(freightOf(e('다이소', '화물차 와이어부러쉬')), '화물차')
+  assert.equal(isFreightSetting('택배'), false)
 })

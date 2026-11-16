@@ -6,7 +6,7 @@ import './design.css'
 import { getWorkCategory, workCategories, workProjectLabel, type WorkCategory } from './workLogCategories'
 import DeliveryPerformance from './DeliveryPerformance'
 import FreightExpenses from './FreightExpenses'
-import { freightCategories, guessFreight } from './freightRules'
+import { freightCategories, freightLabel, guessFreight } from './freightRules'
 import CorporateCards from './CorporateCards'
 import Estimates from './Estimates'
 import TaxInvoices from './TaxInvoices'
@@ -66,7 +66,7 @@ const expenseMenus = [
   ['adminExpenses', '관리비 지출내역'],
   ['researchExpenses', '연구비 지출내역'],
   ['legacyExpenses', '22년 이전 지출내역'],
-  ['freight', '화물·운반비 내역'],
+  ['freight', '장비·운반비 내역'],
   ['taxInvoices', '전자세금계산서 조회'],
   ['corporateCards', '법인카드 조회'],
 ] as const
@@ -2508,7 +2508,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                         : '작업일보'}
             </p>
             <h2>
-              {view === 'freight' ? '화물·운반비 내역' : view === 'taxInvoices' ? '전자세금계산서 조회' : view === 'corporateCards' ? '법인카드 조회' : view === 'estimateCosts' ? '자재비용' : view === 'estimates' ? '견적서 제작' : tradeMenus.find(([screen]) => screen === view)?.[1] ?? (view === 'home'
+              {view === 'freight' ? '장비·운반비 내역' : view === 'taxInvoices' ? '전자세금계산서 조회' : view === 'corporateCards' ? '법인카드 조회' : view === 'estimateCosts' ? '자재비용' : view === 'estimates' ? '견적서 제작' : tradeMenus.find(([screen]) => screen === view)?.[1] ?? (view === 'home'
                 ? '전체 현황'
                 : view === 'orders'
                 ? `${orderYear}년 수주대장`
@@ -2616,6 +2616,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
             projectLabel={projectLabelOf}
             initialYear={today.slice(0, 4)}
             onSave={next => updateWorkspace({ expenses: next })}
+            renderOutput={table => renderOutputButtons(table)}
           />}
         {view === 'deliveries' && <DeliveryPerformance workspaceStore={workspaceStore} />}
         {(view === 'estimateCosts' || view === 'estimates') && <Estimates workspaceStore={workspaceStore} screen={view === 'estimateCosts' ? 'costs' : 'estimates'} vendors={expenseVendors} onOpenCosts={() => navigateTo('estimateCosts')} />}
@@ -4132,16 +4133,16 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                       placeholder="인쇄 시 비고란에 표시"
                     />
                   </label>
-                  {/* 화물·운반비 내역: guessed from 거래처·내용 unless picked here. */}
+                  {/* 장비·운반비 내역: guessed from 거래처·내용 unless picked here. */}
                   <label>
-                    화물·운반비
+                    장비·운반비
                     <select
                       value={expenseForm.freight}
                       onChange={(event) => setExpenseForm({ ...expenseForm, freight: event.target.value })}
                     >
-                      <option value="">{(() => { const guess = guessFreight(expenseForm); return guess ? `자동 — ${guess}(으)로 화물·운반비 내역에 등록` : '자동 — 해당없음' })()}</option>
-                      {freightCategories.map((category) => <option key={category} value={category}>{category}</option>)}
-                      <option value="제외">제외 (화물·운반비 내역에 넣지 않음)</option>
+                      <option value="">{(() => { const guess = guessFreight(expenseForm); return guess ? `자동 — 「${freightLabel(guess)}」(으)로 장비·운반비 내역에 등록` : '자동 — 해당없음' })()}</option>
+                      {freightCategories.map((category) => <option key={category} value={category}>{freightLabel(category)}</option>)}
+                      <option value="제외">제외 (장비·운반비 내역에 넣지 않음)</option>
                     </select>
                   </label>
                   <div className="modal-actions">

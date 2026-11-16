@@ -1,19 +1,19 @@
 import type { Expense } from './workspaceTypes.ts'
 
 /**
- * 화물·운반비 내역: 장비(크레인·지게차) and 운반비(화물차·택배) spending, picked out of the
- * expenses by their 거래처 and 내용 as soon as they are registered. An expense's `freight` field
- * overrides the guess: one of the categories, or '제외' to keep it off the list.
+ * 장비·운반비 내역: 장비(크레인·지게차) and 운반비(화물차) spending, picked out of the expenses by
+ * their 거래처 and 내용 as soon as they are registered. 택배 is not part of it. An expense's
+ * `freight` field overrides the guess: one of the categories, or '제외' to keep it off the list.
  */
-export const freightCategories = ['크레인', '지게차', '화물차', '택배'] as const
+export const freightCategories = ['크레인', '지게차', '화물차'] as const
 export type FreightCategory = typeof freightCategories[number]
 export const freightSettings = [...freightCategories, '제외'] as const
 export type FreightSetting = typeof freightSettings[number]
-export const freightGroups: Record<FreightCategory, '장비' | '운반비'> = { 크레인: '장비', 지게차: '장비', 화물차: '운반비', 택배: '운반비' }
+export const freightGroups: Record<FreightCategory, '장비' | '운반비'> = { 크레인: '장비', 지게차: '장비', 화물차: '운반비' }
 
 const crane = /크레인|크래인|기중기/
 const forklift = /지게차|중기|건설기계/
-// Parcel and small-freight services, mostly paid by card for a part or two.
+// Parcel and small-freight services, mostly paid by card for a part or two: left out.
 const parcel = /택배|대신(정기)?화물|경동화물|합동화물|천일화물|우체국|퀵서비스|퀵배송/
 const truck = /화물|운반|운송|운임|물류|통운|상운|운수|용달|탁송/
 
@@ -22,7 +22,7 @@ export function guessFreight(expense: Pick<Expense, 'vendor' | 'memo'>): Freight
   const text = `${expense.memo} ${expense.vendor}`
   if (crane.test(text)) return '크레인'
   if (forklift.test(text)) return '지게차'
-  if (parcel.test(text)) return '택배'
+  if (parcel.test(text)) return null
   if (truck.test(text)) return '화물차'
   return null
 }
@@ -35,3 +35,6 @@ export function freightOf(expense: Pick<Expense, 'vendor' | 'memo' | 'freight'>)
 }
 
 export const isFreightSetting = (value: unknown): value is FreightSetting => (freightSettings as readonly unknown[]).includes(value)
+
+/** 운반비 has one kind (화물차), so it is shown by the group's name. */
+export const freightLabel = (category: FreightCategory) => category === '화물차' ? '운반비' : category
