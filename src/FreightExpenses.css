@@ -55,3 +55,4 @@
 .freight-kinds button small { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
 .freight-kinds button.active { border-color: var(--accent); background: var(--accent); color: #fff; }
 .freight-kinds button.active small { color: #ffffffcc; }
+.freight-year { min-width: 120px; min-height: 38px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; font-size: 14px; font-weight: 800; cursor: pointer; }

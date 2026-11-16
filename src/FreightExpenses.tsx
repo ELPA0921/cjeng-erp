@@ -8,6 +8,7 @@ type Group = '전체' | '장비' | '운반비'
 const groups: Group[] = ['전체', '장비', '운반비']
 export type OutputTable = { title: string; columns: string[]; rows: (string | number)[][]; totals: (string | number)[][] }
 const money = (value: number) => value.toLocaleString('ko-KR')
+const firstYear = '2023'
 type SortKey = 'date' | 'category' | 'project' | 'kind' | 'vendor' | 'memo' | 'supply' | 'vat' | 'amount'
 /** The table's columns: header, sort key, and how the column is aligned. 분류 변경 has no sort. */
 const columns: { label: string; key?: SortKey; className: string }[] = [
@@ -39,8 +40,11 @@ export default function FreightExpenses({ expenses, projectLabel, onSave, initia
   renderOutput: (table: OutputTable) => ReactNode
 }) {
   const listed = useMemo(() => expenses.flatMap(expense => { const category = freightOf(expense); return category ? [{ expense, category }] : [] }), [expenses])
-  const years = useMemo(() => [...new Set([initialYear, ...listed.map(row => row.expense.date.slice(0, 4))])].filter(year => year >= '2023').sort().reverse(), [listed, initialYear])
-  const [year, setYear] = useState(initialYear)
+  const years = useMemo(() => [...new Set([initialYear, ...listed.map(row => row.expense.date.slice(0, 4))])].filter(year => year >= firstYear).sort().reverse(), [listed, initialYear])
+  // '전체' lists every year shown here (2023 on); earlier years live in 22년 이전 지출내역.
+  const [year, setYear] = useState('전체')
+  const inYear = (date: string) => year === '전체' ? date >= firstYear : date.startsWith(year)
+  const yearLabel = year === '전체' ? '전체' : `${year}년`
   const [group, setGroup] = useState<Group>('전체')
   const [sub, setSub] = useState<EquipmentCategory | null>(null)
   const [query, setQuery] = useState('')
@@ -48,7 +52,7 @@ export default function FreightExpenses({ expenses, projectLabel, onSave, initia
   const [saving, setSaving] = useState(false)
   const [sort, setSort] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'date', direction: 'asc' })
 
-  const ofYear = listed.filter(row => row.expense.date.startsWith(year))
+  const ofYear = listed.filter(row => inYear(row.expense.date))
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
   const searchText = (expense: Expense) => { const project = projectLabel(expense.projectId); return [expense.date, project.orderNo, project.name, expense.kind, expense.vendor, expense.memo, expense.note ?? ''].join(' ').toLowerCase() }
   const rows = ofYear
@@ -73,7 +77,7 @@ export default function FreightExpenses({ expenses, projectLabel, onSave, initia
       // Rows that tie stay in date order whichever way the column is sorted.
       return (sort.direction === 'asc' ? order : -order) || a.expense.date.localeCompare(b.expense.date) || a.expense.vendor.localeCompare(b.expense.vendor, 'ko')
     })
-  const excluded = expenses.filter(expense => expense.freight === '제외' && expense.date.startsWith(year)).sort((a, b) => a.date.localeCompare(b.date))
+  const excluded = expenses.filter(expense => expense.freight === '제외' && inYear(expense.date)).sort((a, b) => a.date.localeCompare(b.date))
   const total = (list: Expense[]) => ({ count: list.length, supply: list.reduce((sum, e) => sum + getExpenseSupplyAmount(e), 0), vat: list.reduce((sum, e) => sum + getExpenseVatAmount(e), 0), amount: list.reduce((sum, e) => sum + e.amount, 0) })
   const shownTotal = total(rows.map(row => row.expense))
   const summary = groups.map(item => ({ item, ...total(ofYear.filter(row => matches(item, null, row.category)).map(row => row.expense)) }))
@@ -92,7 +96,7 @@ export default function FreightExpenses({ expenses, projectLabel, onSave, initia
     finally { setSaving(false) }
   }
 
-  const title = `${year}년 장비·운반비 내역${group === '전체' ? '' : sub ? ` (장비 · ${sub})` : ` (${group})`}`
+  const title = `${yearLabel} 장비·운반비 내역${group === '전체' ? '' : sub ? ` (장비 · ${sub})` : ` (${group})`}`
   const outputTable: OutputTable = {
     title,
     columns: ['일자', '분류', '수주번호', '공사명', '구분', '거래처', '내용', '공급가액', '부가세', '합계'],
@@ -110,7 +114,7 @@ export default function FreightExpenses({ expenses, projectLabel, onSave, initia
   }
 
   return <section className="content-grid single freight-view">
-    <div className="freight-summary" aria-label={`${year}년 분류별 합계`}>
+    <div className="freight-summary" aria-label={`${yearLabel} 분류별 합계`}>
       {summary.map(({ item, count, supply }) => <button key={item} type="button" aria-pressed={group === item} className={`freight-summary-item${group === item ? ' active' : ''}`} onClick={() => pickGroup(item)}>
         <span>{item === '전체' ? '장비 + 운반비' : item}</span><strong>{money(supply)}</strong><small>{count}건 · 공급가액</small>
       </button>)}
@@ -118,7 +122,10 @@ export default function FreightExpenses({ expenses, projectLabel, onSave, initia
     <div className="panel full">
       <div className="panel-heading freight-heading">
         <div><h3>{title}</h3><span>지출을 등록하면 거래처·내용에 크레인, 지게차(중기·건설기계), 고소작업대(렌탈), 스카이, 사다리차, 포크레인, 화물, 운반, 운송 등이 있을 때 자동으로 여기에 들어옵니다. 택배는 넣지 않습니다. 분류가 틀리면 오른쪽 「분류 변경」에서 바꾸거나 제외하세요.</span></div>
-        <div className="year-switch" aria-label="년도">{years.map(item => <button key={item} type="button" className={item === year ? 'active' : ''} onClick={() => setYear(item)}>{item}</button>)}</div>
+        <select className="freight-year" aria-label="년도" value={year} onChange={event => setYear(event.target.value)}>
+          <option value="전체">전체</option>
+          {years.map(item => <option key={item} value={item}>{item}</option>)}
+        </select>
       </div>
       <div className="freight-toolbar">
         <div className="freight-filters" role="tablist" aria-label="장비·운반비">
@@ -152,7 +159,7 @@ export default function FreightExpenses({ expenses, projectLabel, onSave, initia
               <td className="number">{money(expense.amount)}</td>
               <td>{classSelect(expense)}</td>
             </tr> })}
-            {!rows.length && <tr><td colSpan={10} className="freight-empty">{year}년 {group === '전체' ? '' : `${sub ?? group} `}내역이 없습니다.</td></tr>}
+            {!rows.length && <tr><td colSpan={10} className="freight-empty">{yearLabel} {group === '전체' ? '' : `${sub ?? group} `}내역이 없습니다.</td></tr>}
           </tbody>
           {rows.length > 0 && <tfoot><tr><td colSpan={6}>합계 {shownTotal.count}건</td><td className="number">{money(shownTotal.supply)}</td><td className="number">{money(shownTotal.vat)}</td><td className="number">{money(shownTotal.amount)}</td><td /></tr></tfoot>}
         </table>
