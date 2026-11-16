@@ -15,10 +15,10 @@
 .freight-search { flex: 1 1 220px; max-width: 320px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
 /* One fixed-size table: the same column widths whatever is shown, rows scroll under a fixed header and 합계. */
 .freight-table-wrap { height: max(420px, calc(100vh - 360px)); overflow: auto; }
-.freight-table { width: 100%; min-width: 1260px; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.freight-table { width: 100%; min-width: 1160px; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 13px; }
 .freight-table .col-date { width: 100px; }
 .freight-table .col-category { width: 76px; }
-.freight-table .col-project { width: 200px; }
+.freight-table .col-project { width: 96px; }
 .freight-table .col-kind { width: 108px; }
 .freight-table .col-vendor { width: 150px; }
 .freight-table .col-money { width: 100px; }

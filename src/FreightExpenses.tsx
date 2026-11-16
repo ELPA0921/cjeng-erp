@@ -13,7 +13,7 @@ type SortKey = 'date' | 'category' | 'project' | 'kind' | 'vendor' | 'memo' | 's
 const columns: { label: string; key?: SortKey; className: string }[] = [
   { label: '일자', key: 'date', className: 'col-date' },
   { label: '분류', key: 'category', className: 'col-category' },
-  { label: '공사', key: 'project', className: 'col-project' },
+  { label: '수주번호', key: 'project', className: 'col-project' },
   { label: '구분', key: 'kind', className: 'col-kind' },
   { label: '거래처', key: 'vendor', className: 'col-vendor' },
   { label: '내용', key: 'memo', className: 'col-memo' },
@@ -135,7 +135,7 @@ export default function FreightExpenses({ expenses, projectLabel, onSave, initia
             {rows.map(({ expense, category }) => { const project = projectLabel(expense.projectId); return <tr key={expense.id}>
               <td>{expense.date}</td>
               <td><span className="freight-tag" data-freight={category}>{label(category)}</span></td>
-              <td className="clip" title={`${project.orderNo} ${project.name}`}><strong>{project.orderNo}</strong> <small>{project.name}</small></td>
+              <td className="clip" title={project.name}>{project.orderNo}</td>
               <td className="clip" title={expense.kind}>{expense.kind}</td>
               <td className="clip" title={expense.vendor}>{expense.vendor}</td>
               <td className="clip memo" title={expense.memo}>{expense.memo}</td>
