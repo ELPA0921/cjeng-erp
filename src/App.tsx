@@ -6,6 +6,7 @@ import './design.css'
 import { getWorkCategory, workCategories, workProjectLabel, type WorkCategory } from './workLogCategories'
 import DeliveryPerformance from './DeliveryPerformance'
 import FreightExpenses from './FreightExpenses'
+import YearPicker from './YearPicker'
 import { freightCategories, freightLabel, guessFreight } from './freightRules'
 import CorporateCards from './CorporateCards'
 import Estimates from './Estimates'
@@ -2557,27 +2558,10 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
               view === 'expenses' ||
               view === 'adminExpenses' ||
               view === 'researchExpenses' ? (
-              <div className="year-switch" aria-label="수주년도">
-                {orderYears.map((year) => (
-                  <button
-                    className={orderYear === year ? 'active' : ''}
-                    key={year}
-                    type="button"
-                    onClick={() => switchOrderYear(year)}
-                  >
-                    {year}
-                  </button>
-                ))}
-              </div>
+              <YearPicker ariaLabel="수주년도" value={orderYear} options={orderYears.map((year) => ({ value: year, label: year }))} onChange={switchOrderYear} />
             ) : view === 'legacyExpenses' ? (
-              <div className="year-switch" aria-label="22년 이전 년도">
-                {legacyYears.map((year) => (
-                  <button className={legacyYear === year ? 'active' : ''} key={year} type="button"
-                    onClick={() => selectProject(legacy.find(project => project.year === year)?.order.id ?? legacyProjectId)}>
-                    {year}
-                  </button>
-                ))}
-              </div>
+              <YearPicker ariaLabel="22년 이전 년도" value={legacyYear} options={legacyYears.map((year) => ({ value: year, label: year }))}
+                onChange={(year) => selectProject(legacy.find(project => project.year === year)?.order.id ?? legacyProjectId)} />
             ) : view === 'worklogList' ? (
               <>
                 <span>{filteredWorkLogsForList.length}건</span>

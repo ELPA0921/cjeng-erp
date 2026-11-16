@@ -1,0 +1,9 @@
+/* Same look as .year-switch: a light tray holding one green pill, with the years dropping below. */
+.year-picker { position: relative; display: inline-block; flex: none; padding: 5px; border-radius: 10px; background: var(--surface-muted); }
+.year-picker-current { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-width: 110px; min-height: 34px; padding: 0 14px; border: 0; border-radius: 6px; background: #1d7656; color: #fff; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; box-shadow: 0 1px 4px #183e2b08; }
+.year-picker-current span { font-size: 9px; opacity: 0.85; }
+.year-picker-current:focus-visible { outline: 2px solid #1d7656; outline-offset: 2px; }
+.year-picker-list { position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; min-width: 100%; max-height: 260px; margin: 0; padding: 5px; overflow-y: auto; list-style: none; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 8px 24px #1e302722; }
+.year-picker-list button { display: block; width: 100%; min-height: 34px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; color: #486581; font: inherit; font-size: 13px; font-weight: 800; text-align: center; cursor: pointer; }
+.year-picker-list button:hover, .year-picker-list button:focus-visible { background: var(--surface-muted); outline: none; }
+.year-picker-list button.active { background: #1d7656; color: #fff; }

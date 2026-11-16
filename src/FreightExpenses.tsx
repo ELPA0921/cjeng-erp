@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import type { Expense } from './workspaceTypes'
 import { getExpenseSupplyAmount, getExpenseVatAmount } from './expenseAmounts'
 import { equipmentCategories, freightCategories, freightGroupOf, freightLabel as label, freightOf, guessFreight, type EquipmentCategory, type FreightCategory } from './freightRules'
+import YearPicker from './YearPicker'
 import './FreightExpenses.css'
 
 type Group = '전체' | '장비' | '운반비'
@@ -122,10 +123,7 @@ export default function FreightExpenses({ expenses, projectLabel, onSave, initia
     <div className="panel full">
       <div className="panel-heading freight-heading">
         <div><h3>{title}</h3><span>지출을 등록하면 거래처·내용에 크레인, 지게차(중기·건설기계), 고소작업대(렌탈), 스카이, 사다리차, 포크레인, 화물, 운반, 운송 등이 있을 때 자동으로 여기에 들어옵니다. 택배는 넣지 않습니다. 분류가 틀리면 오른쪽 「분류 변경」에서 바꾸거나 제외하세요.</span></div>
-        <select className="freight-year" aria-label="년도" value={year} onChange={event => setYear(event.target.value)}>
-          <option value="전체">전체</option>
-          {years.map(item => <option key={item} value={item}>{item}</option>)}
-        </select>
+        <YearPicker ariaLabel="년도" value={year} options={[{ value: '전체', label: '전체' }, ...years.map(item => ({ value: item, label: item }))]} onChange={setYear} />
       </div>
       <div className="freight-toolbar">
         <div className="freight-filters" role="tablist" aria-label="장비·운반비">
