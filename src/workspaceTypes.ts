@@ -67,7 +67,8 @@ export type CardAccounting = {
    */
   mode?: '대조'
 }
-export type CardAccountingSplit = { expenseId: string; orderNo: string; memo: string; supplyAmount: number }
+/** date: the day the share's expense is filed under (the invoice's date unless changed). */
+export type CardAccountingSplit = { expenseId: string; orderNo: string; memo: string; supplyAmount: number; date?: string }
 
 /** 연구비: one 연구 registered under a 269NN number (26901, 26902, ...). */
 export type ResearchProject = { id: string; orderNo: string; name: string }

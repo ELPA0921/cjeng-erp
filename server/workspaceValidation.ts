@@ -199,7 +199,10 @@ export function validateCollection(name: WorkspaceCollection, value: unknown) {
     if (!Array.isArray(splits) || splits.length < 2 || splits.length > 50 || row.status !== '회계반영') throw new Error('분할 회계반영 내용을 확인하세요.')
     return { ...row, splits: splits.map(item => {
       const split = object(item)
-      return { expenseId: text(split.expenseId, true), orderNo: text(split.orderNo, true), memo: text(split.memo ?? ''), supplyAmount: finite(split.supplyAmount, '분할 공급가액') }
+      const share = { expenseId: text(split.expenseId, true), orderNo: text(split.orderNo, true), memo: text(split.memo ?? ''), supplyAmount: finite(split.supplyAmount, '분할 공급가액') }
+      if (split.date === undefined) return share
+      day(split.date)
+      return { ...share, date: split.date as string }
     }) }
   })
 }

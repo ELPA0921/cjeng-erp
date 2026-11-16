@@ -2289,7 +2289,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
               }
             : expense,
         ),
-        cardAccounting: syncEditedExpense(cardAccounting, { id: editingExpenseId, memo: expenseForm.memo, supplyAmount }, orderNo),
+        cardAccounting: syncEditedExpense(cardAccounting, { id: editingExpenseId, memo: expenseForm.memo, supplyAmount, date: expenseForm.date }, orderNo),
       }, expenseEditRevision)
       if (!saved) return
       if (isResearchProject(expenseForm.projectId)) setSelectedResearchId(expenseForm.projectId)

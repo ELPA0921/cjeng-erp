@@ -143,8 +143,8 @@
 .card-split-summary li span { text-align: right; font-variant-numeric: tabular-nums; }
 .card-split-summary li small, .card-split-summary li em { color: var(--text-muted); font-style: normal; }
 .card-split-summary li em { overflow: hidden; text-overflow: ellipsis; }
-.card-split-modal { width: min(920px, 100%); }
-.card-split-rows table { min-width: 760px; }
+.card-split-modal { width: min(1040px, 100%); }
+.card-split-rows table { min-width: 900px; }
 .card-split-rows .card-split-money { width: 140px; }
 .card-split-rows .card-split-money input { text-align: right; font-variant-numeric: tabular-nums; }
 .card-split-rows .card-accounting-wide:first-child { min-width: 220px; }
@@ -220,3 +220,4 @@
 .invoice-match-rows tr.is-locked td strong { color: #a3aaa6; }
 .invoice-match-rows .invoice-match-posted { display: block; margin-top: 2px; color: #8a918d; font-size: 11px; }
 .invoice-match-rows .invoice-match-fixed { display: block; padding-right: 10px; text-align: right; font-variant-numeric: tabular-nums; }
+.card-split-rows .card-split-date { width: 150px; }

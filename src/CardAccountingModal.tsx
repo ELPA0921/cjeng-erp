@@ -22,7 +22,7 @@ export default function CardAccountingModal({ mode, rows, entries, orders, onSub
 }) {
   const [drafts, setDrafts] = useState<Record<string, Draft>>(() => Object.fromEntries(rows.map(row => {
     const entry = entries.get(row.id)
-    const splits = entry?.splits?.map(({ orderNo, memo, supplyAmount }) => ({ orderNo, memo, supplyAmount }))
+    const splits = entry?.splits?.map(({ orderNo, memo, supplyAmount, date }) => ({ orderNo, memo, supplyAmount, ...(date ? { date } : {}) }))
     return [row.id, { status: mode === 'post' ? '회계반영' : entry?.status ?? '회계반영', orderNo: splits?.[0]?.orderNo ?? entry?.orderNo ?? '', memo: splits?.[0]?.memo || entry?.memo || row.defaultMemo || '', ...(splits ? { splits } : {}) }]
   })))
   const [invalid, setInvalid] = useState<Set<string>>(() => new Set())

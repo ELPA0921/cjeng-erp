@@ -172,3 +172,18 @@ test('지출 대조 also matches on 합계 when per-line 부가세 rounding move
   assert.deepEqual(one.cardAccounting[0].expenseId, 'a')
   assert.equal(one.cardAccounting[0].splits, undefined)
 })
+
+test('분할회계반영 shares take the invoice date by default and keep a changed one', async () => {
+  const { syncEditedExpense } = await import('./cardAccounting.ts')
+  const invoice = { id: 'inv-d', date: '2026-11-13', vendor: '대한카고크레인', supplyAmount: 1400000, vatAmount: 140000, amount: 1540000, kind: '전자세금계산서', cardNumber: '' }
+  const parts = [{ date: '2026-11-11', orderNo: '26006', memo: '김포', supplyAmount: 700000 }, { orderNo: '26007', memo: '진영', supplyAmount: 700000 }]
+  const posted = applyCardAccounting([{ row: invoice, status: '회계반영', orderNo: '', memo: '', splits: parts }], empty, 'T1')
+  assert.deepEqual(posted.expenses.map(e => e.date), ['2026-11-11', '2026-11-13'])
+  assert.deepEqual(posted.cardAccounting[0].splits.map(s => s.date), ['2026-11-11', '2026-11-13'])
+  // Resaving from the 수정 window (no dates) keeps each share's day.
+  const resaved = applyCardAccounting([{ row: invoice, status: '회계반영', orderNo: '', memo: '', splits: parts.map(({ date: _d, ...part }) => part) }], { ...posted, orders }, 'T2')
+  assert.deepEqual(resaved.expenses.map(e => e.date), ['2026-11-11', '2026-11-13'])
+  // A day changed in 지출내역 is kept on the share.
+  assert.equal(syncEditedExpense(posted.cardAccounting, { id: 'tax-inv-d-2', memo: '진영', date: '2026-11-12' }, '26007')[0].splits[1].date, '2026-11-12')
+  assert.throws(() => applyCardAccounting([{ row: invoice, status: '회계반영', orderNo: '', memo: '', splits: [{ ...parts[0], date: '2026-13-40' }, parts[1]] }], empty), /일자/)
+})

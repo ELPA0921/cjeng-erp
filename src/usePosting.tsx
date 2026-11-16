@@ -182,7 +182,7 @@ export function usePosting<T extends { id: string }>(rows: T[], { orders, expens
     : splitStep === 'choose' ? <SplitChoiceModal row={splitRow} onMatch={() => setSplitStep('match')} onSplit={() => setSplitStep('split')} onClose={() => setSplitRow(null)} />
     : splitStep === 'match' ? <InvoiceMatchModal row={splitRow} expenses={expenses} cardAccounting={cardAccounting} orders={postingOrders(orders)} onSave={saveMatch} onBack={() => setSplitStep('choose')} onClose={() => setSplitRow(null)} />
     : <SplitAccountingModal row={splitRow} orders={postingOrders(orders)}
-    parts={splitEntry?.splits?.map(({ orderNo, memo, supplyAmount }) => ({ orderNo, memo, supplyAmount }))}
+    parts={splitEntry?.splits?.map(({ expenseId, orderNo, memo, supplyAmount, date }) => ({ orderNo, memo, supplyAmount, date: date ?? expenses.find(expense => expense.id === expenseId)?.date ?? splitRow.date }))}
     orderNo={splitEntry?.status === '회계반영' ? splitEntry.orderNo : ''} memo={splitEntry?.memo || splitRow.defaultMemo || ''}
     onSave={saveSplit} onClose={() => setSplitRow(null)} />
   const modalElement = modal && <CardAccountingModal mode={modal.mode} rows={modal.rows} entries={entries} orders={orders} onSubmit={submitModal} onClose={() => setModal(null)} onCreateOrder={onCreateOrder} onRemove={removeFromModal} />

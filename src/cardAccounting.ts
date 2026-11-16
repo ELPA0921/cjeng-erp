@@ -19,7 +19,7 @@ export type PostingSource = {
 }
 export type CardAccountingChoice = CardAccountingStatus | '미반영'
 /** One share of a 분할 회계반영: which order, its 공급가액 and its 내용. */
-export type SplitPart = { orderNo: string; memo: string; supplyAmount: number }
+export type SplitPart = { orderNo: string; memo: string; supplyAmount: number; date?: string }
 export type CardAccountingInput = { row: PostingSource; status: CardAccountingChoice; orderNo: string; memo: string; splits?: SplitPart[] }
 
 export const missingOrderMessage = '존재하지 않는 수주번호입니다.'
@@ -81,8 +81,10 @@ export function splitError(row: PostingSource, parts: SplitPart[], orders: Order
   const sum = parts.reduce((acc, part) => acc + part.supplyAmount, 0)
   if (sum !== total) return `나눈 공급가액 합계(${sum.toLocaleString('ko-KR')}원)가 ${total.toLocaleString('ko-KR')}원과 맞지 않습니다.`
   if (parts.some(part => !findOrder(orders, part.orderNo))) return missingOrderMessage
+  if (parts.some(part => part.date !== undefined && !isDay(part.date))) return '일자를 확인해 주세요.'
   return null
 }
+const isDay = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value))
 
 /** Every order number a posting points at (one, or each share of a split). */
 export const entryOrderNos = (entry: CardAccounting) => entry.splits?.length ? [...new Set(entry.splits.map(split => split.orderNo.trim()))] : entry.orderNo.trim() ? [entry.orderNo.trim()] : []
@@ -134,9 +136,14 @@ export function applyCardAccounting(
       const amounts = splitAmounts(row, parts.map(part => part.supplyAmount))
       entry.splits = parts.map((part, index) => {
         const expenseId = (matched ? previous?.splits?.[index]?.expenseId : undefined) ?? `${postingExpenseId(row)}-${index + 1}`
-        expenses.set(expenseId, { ...base(expenseId), projectId: findOrder(state.orders, part.orderNo)!.id, memo: part.memo.trim(), ...amounts[index] })
+        // Each share is filed under its own day: the invoice's unless changed. A share saved
+        // without one (the 수정 window, older splits) keeps the day its expense already has.
+        const existingDate = expenses.get(expenseId)?.date
+        const share = { ...base(expenseId), projectId: findOrder(state.orders, part.orderNo)!.id, memo: part.memo.trim(), ...amounts[index] }
+        share.date = part.date || existingDate || row.date
+        expenses.set(expenseId, share)
         kept.add(expenseId)
-        return { expenseId, orderNo: part.orderNo.trim(), memo: part.memo.trim(), supplyAmount: part.supplyAmount }
+        return { expenseId, orderNo: part.orderNo.trim(), memo: part.memo.trim(), supplyAmount: part.supplyAmount, date: share.date }
       })
       Object.assign(entry, splitSummary(entry.splits))
       if (matched) entry.mode = '대조'
@@ -236,7 +243,7 @@ export function applyInvoiceMatch(
     if (row.cardNumber) next.cardNumber = row.cardNumber
     else delete next.cardNumber
     expenses.set(expenseId, next)
-    return { expenseId, orderNo: line.orderNo.trim(), memo: line.memo.trim(), supplyAmount: supplies[index] }
+    return { expenseId, orderNo: line.orderNo.trim(), memo: line.memo.trim(), supplyAmount: supplies[index], date: next.date }
   })
   // Expenses the invoice no longer covers: hand-entered ones stay, ones the posting made go.
   const keep = new Set(splits.map(split => split.expenseId))
@@ -270,11 +277,11 @@ export function withSplitSiblings(cardAccounting: CardAccounting[], expenseIds: 
 
 
 /** Editing a posted expense keeps its source row's 수주번호 and 내용 (and a share's 공급가액) in step. */
-export function syncEditedExpense(cardAccounting: CardAccounting[], expense: Pick<Expense, 'id' | 'memo'> & { supplyAmount?: number }, orderNo: string, now = new Date().toISOString()) {
+export function syncEditedExpense(cardAccounting: CardAccounting[], expense: Pick<Expense, 'id' | 'memo'> & { supplyAmount?: number; date?: string }, orderNo: string, now = new Date().toISOString()) {
   return cardAccounting.map(entry => {
     if (entry.expenseId === expense.id) return { ...entry, orderNo, memo: expense.memo.trim(), updatedAt: now }
     if (!entry.splits?.some(split => split.expenseId === expense.id)) return entry
-    const splits = entry.splits.map(split => split.expenseId === expense.id ? { ...split, orderNo, memo: expense.memo.trim(), supplyAmount: expense.supplyAmount ?? split.supplyAmount } : split)
+    const splits = entry.splits.map(split => split.expenseId === expense.id ? { ...split, orderNo, memo: expense.memo.trim(), supplyAmount: expense.supplyAmount ?? split.supplyAmount, ...(expense.date ? { date: expense.date } : {}) } : split)
     return { ...entry, ...splitSummary(splits), splits, updatedAt: now }
   })
 }
