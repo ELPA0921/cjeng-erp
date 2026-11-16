@@ -36,7 +36,7 @@ export default function YearPicker({ value, options, onChange, ariaLabel }: {
 
   return <div className="year-picker" ref={box}>
     <button type="button" className="year-picker-current" aria-label={`${ariaLabel}: ${current?.label ?? value}`} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)}>
-      {current?.label ?? value}<span aria-hidden="true">▼</span>
+      {current?.label ?? value}
     </button>
     {open && <ul className="year-picker-list" role="listbox" aria-label={ariaLabel} ref={list} onKeyDown={move}>
       {options.map(option => <li key={option.value}>
