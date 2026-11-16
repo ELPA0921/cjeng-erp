@@ -46,6 +46,12 @@ export const postingOrders = (orders: Order[]) => [...adminOrders(orders), ...or
 // One expense per source row, so posting the same row twice can never duplicate it.
 export const cardExpenseId = (approvalId: string) => `card-${approvalId.slice(0, 32)}`
 export const postingExpenseId = (row: PostingSource) => row.kind === '법인카드' ? cardExpenseId(row.id) : `tax-${row.id.slice(0, 32)}`
+/**
+ * Whether the posting of this row made the expense itself (its id, or a share's id-1, id-2 …).
+ * Undoing a posting only ever deletes these: an expense with any other id was entered by hand,
+ * so it stays even if the entry somehow lost its 지출 대조 mark.
+ */
+const madeByPosting = (row: PostingSource, expenseId: string) => { const base = postingExpenseId(row); return expenseId === base || expenseId.startsWith(`${base}-`) }
 
 const isSplit = (input: CardAccountingInput) => input.status === '회계반영' && (input.splits?.length ?? 0) > 0
 
@@ -114,7 +120,7 @@ export function applyCardAccounting(
     const previous = entries.get(row.id)
     const matched = previous?.mode === '대조'
     const kept = new Set<string>()
-    const dropStale = () => { if (!matched) for (const id of previous ? entryExpenseIds(previous) : []) if (!kept.has(id)) expenses.delete(id) }
+    const dropStale = () => { if (!matched) for (const id of previous ? entryExpenseIds(previous) : []) if (!kept.has(id) && madeByPosting(row, id)) expenses.delete(id) }
     if (status === '미반영') { dropStale(); entries.delete(row.id); continue }
     const entry: CardAccounting = { id: row.id, status, orderNo: orderNo.trim(), memo: memo.trim(), updatedAt: now }
     const base = (expenseId: string) => {
@@ -247,7 +253,7 @@ export function applyInvoiceMatch(
   })
   // Expenses the invoice no longer covers: hand-entered ones stay, ones the posting made go.
   const keep = new Set(splits.map(split => split.expenseId))
-  if (previous && previous.mode !== '대조') for (const id of entryExpenseIds(previous)) if (!keep.has(id)) expenses.delete(id)
+  if (previous && previous.mode !== '대조') for (const id of entryExpenseIds(previous)) if (!keep.has(id) && madeByPosting(row, id)) expenses.delete(id)
   const entry: CardAccounting = splits.length === 1
     ? { id: row.id, status: '회계반영', orderNo: splits[0].orderNo, memo: splits[0].memo, updatedAt: now, expenseId: splits[0].expenseId, mode: '대조' }
     : { id: row.id, status: '회계반영', ...splitSummary(splits), updatedAt: now, splits, mode: '대조' }

@@ -3,6 +3,7 @@ import { readSession, sameOrigin, settings } from '../server/security.ts'
 import { workspaceSheetsRequest } from '../server/googleSheets.ts'
 import { validateWorkspace } from '../server/workspaceValidation.ts'
 import { applyWorkspaceOps, readWorkspaceRevision, readWorkspaceRows, replaceOps, validateOps, workspaceSql } from '../server/workspaceDb.ts'
+import { outdatedClient, outdatedMessage, serverBuild } from '../server/appBuild.ts'
 
 // Google Sheets revisions are content hashes; the database revision is a counter sent as text.
 const workspaceRevision = (value: unknown) => typeof value === 'string' && (/^[a-f0-9]{64}$/.test(value) || /^\d{1,15}$/.test(value)) ? value : null
@@ -13,6 +14,8 @@ return async function handler(req: IncomingMessage & {body?: unknown},res: Serve
   res.setHeader('Cache-Control','private, no-store')
   res.setHeader('Content-Type','application/json; charset=utf-8')
   res.setHeader('X-Content-Type-Options','nosniff')
+  // Polling reads this to tell an open screen that a newer version is out.
+  res.setHeader('X-App-Build',serverBuild())
   try {
     const user=await deps.readSession(req)
     if (!user) {res.statusCode=401;res.end(JSON.stringify({error:'직원 계정으로 로그인해 주세요.'}));return}
@@ -27,6 +30,7 @@ return async function handler(req: IncomingMessage & {body?: unknown},res: Serve
     }
     if(req.method!=='PUT'){res.statusCode=405;res.setHeader('Allow','GET, PUT');res.end('{}');return}
     if(!deps.sameOrigin(req,deps.settings().origin)){res.statusCode=403;res.end(JSON.stringify({error:'접속 주소를 확인하세요.'}));return}
+    if(outdatedClient(req)){res.statusCode=409;res.end(JSON.stringify({error:outdatedMessage,outdated:true}));return}
     let input
     try {
       if(Number(req.headers['content-length'])>4000000)throw new Error('자료가 너무 큽니다.')

@@ -30,4 +30,6 @@ function pdfjsFiles(): Plugin {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), pdfjsFiles()],
+  // The commit this screen was built from; the server refuses saves from an older one.
+  define: { __APP_BUILD__: JSON.stringify(process.env.VERCEL_GIT_COMMIT_SHA ?? '') },
 })

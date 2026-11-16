@@ -187,3 +187,17 @@ test('분할회계반영 shares take the invoice date by default and keep a chan
   assert.equal(syncEditedExpense(posted.cardAccounting, { id: 'tax-inv-d-2', memo: '진영', date: '2026-11-12' }, '26007')[0].splits[1].date, '2026-11-12')
   assert.throws(() => applyCardAccounting([{ row: invoice, status: '회계반영', orderNo: '', memo: '', splits: [{ ...parts[0], date: '2026-13-40' }, parts[1]] }], empty), /일자/)
 })
+
+test('undoing a posting never deletes a hand-entered expense, even without the 지출 대조 mark', () => {
+  const invoice = { id: 'inv-h', date: '2026-10-31', vendor: '(주)승우레이져', supplyAmount: 300, vatAmount: 30, amount: 330, kind: '전자세금계산서', cardNumber: '' }
+  // An entry that lost its mode: shares point at expenses typed in by hand.
+  const entry = { id: 'inv-h', status: '회계반영', orderNo: '26006, 26007', memo: '', updatedAt: 'T0', splits: [{ expenseId: 'hand-1', orderNo: '26006', memo: 'a', supplyAmount: 100 }, { expenseId: 'hand-2', orderNo: '26007', memo: 'b', supplyAmount: 200 }] }
+  const expenses = [{ id: 'hand-1', projectId: 'o-1', date: '2026-10-01', kind: '전자세금계산서', vendor: 'v', memo: 'a', amount: 110 }, { id: 'hand-2', projectId: 'o-2', date: '2026-10-02', kind: '전자세금계산서', vendor: 'v', memo: 'b', amount: 220 }]
+  const undone = applyCardAccounting([{ row: invoice, status: '미반영', orderNo: '', memo: '' }], { cardAccounting: [entry], expenses, orders }, 'T1')
+  assert.deepEqual(undone.expenses.map(e => e.id), ['hand-1', 'hand-2'])
+  assert.equal(undone.cardAccounting.length, 0)
+  // Shares the posting made itself still go with it.
+  const split = applyCardAccounting([{ row: invoice, status: '회계반영', orderNo: '', memo: '', splits: [{ orderNo: '26006', memo: 'a', supplyAmount: 100 }, { orderNo: '26007', memo: 'b', supplyAmount: 200 }] }], { ...empty, expenses }, 'T2')
+  assert.equal(split.expenses.length, 4)
+  assert.deepEqual(applyCardAccounting([{ row: invoice, status: '미반영', orderNo: '', memo: '' }], { ...split, orders }, 'T3').expenses.map(e => e.id), ['hand-1', 'hand-2'])
+})

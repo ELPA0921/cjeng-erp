@@ -3,6 +3,7 @@ import { readOrders, readOrdersRevision, writeOrders } from '../server/database.
 import { readSession, sameOrigin, settings } from '../server/security.ts'
 import { validateOrders, validateRevision } from '../server/orderValidation.ts'
 import { sharedDrive, syncOrderFolders } from '../server/googleDrive.ts'
+import { outdatedClient, outdatedMessage, serverBuild } from '../server/appBuild.ts'
 
 type Request = IncomingMessage & { body?: unknown }
 export function createOrdersHandler(deps = { readSession, sameOrigin, settings, readOrders, readOrdersRevision, writeOrders, drive: sharedDrive }) {
@@ -10,6 +11,7 @@ return async function handler(req: Request, res: ServerResponse) {
   res.setHeader('Cache-Control', 'private, no-store')
   res.setHeader('Content-Type', 'application/json; charset=utf-8')
   res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('X-App-Build', serverBuild())
   try {
     const user = await deps.readSession(req)
     if (!user) { res.statusCode = 401; res.end(JSON.stringify({ error: '직원 계정으로 로그인해 주세요.' })); return }
@@ -21,6 +23,7 @@ return async function handler(req: Request, res: ServerResponse) {
     }
     if (req.method !== 'PUT') { res.statusCode = 405; res.setHeader('Allow', 'GET, PUT'); res.end('{}'); return }
     if (!deps.sameOrigin(req, deps.settings().origin)) { res.statusCode = 403; res.end(JSON.stringify({ error: '요청한 접속 주소를 확인하세요.' })); return }
+    if (outdatedClient(req)) { res.statusCode = 409; res.end(JSON.stringify({ error: outdatedMessage, outdated: true })); return }
     let orders: Record<string, string>[], revision: number | string
     try {
       if (Number(req.headers['content-length']) > 2000000) throw new Error('수주 파일이 너무 큽니다.')

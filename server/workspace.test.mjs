@@ -117,3 +117,27 @@ test('a saved 수주대장 brings the 공사 folders along, and a drive problem 
   assert.equal(stillSaved.statusCode, 200)
   assert.equal(data.orders.length, 2)
 })
+
+test('a screen built before the running deployment cannot save until it reloads', async () => {
+  let writes = 0
+  const deps = { settings, sameOrigin, readSession: async () => ({ email: 'allowed@example.test' }), readOrders: async () => ({ orders: [], revision: 0 }), writeOrders: async () => { writes++; return { orders: [], revision: 1 } } }
+  process.env.VERCEL_GIT_COMMIT_SHA = 'new-build'
+  try {
+    for (const build of [undefined, 'old-build']) {
+      const res = response()
+      const req = request({ orders: [order], revision: 0 })
+      if (build) req.headers['x-app-build'] = build
+      await createOrdersHandler(deps)(req, res)
+      assert.equal(res.statusCode, 409)
+      assert.equal(res.body.outdated, true)
+      assert.equal(res.headers['X-App-Build'], 'new-build')
+    }
+    assert.equal(writes, 0)
+    const res = response()
+    const req = request({ orders: [order], revision: 0 })
+    req.headers['x-app-build'] = 'new-build'
+    await createOrdersHandler(deps)(req, res)
+    assert.equal(res.statusCode, 200)
+    assert.equal(writes, 1)
+  } finally { delete process.env.VERCEL_GIT_COMMIT_SHA }
+})

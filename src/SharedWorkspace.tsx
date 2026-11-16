@@ -14,8 +14,12 @@ type Snapshot = OrderSnapshot & { workspace: WorkspaceSnapshot }
 type GoogleIdentity = { initialize: (config: { client_id: string; nonce: string; callback: (response: { credential: string }) => void }) => void; renderButton: (element: HTMLElement, config: { theme: string; size: string; text: string; locale: string }) => void; disableAutoSelect: () => void }
 declare global { interface Window { google?: { accounts: { id: GoogleIdentity } } } }
 
+// Saves name the version they come from; an answer from a newer version tells this screen to reload.
+const outdatedEvent = 'cjeng-outdated'
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, { ...init, credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json', ...init?.headers } })
+  const response = await fetch(path, { ...init, credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json', 'X-App-Build': __APP_BUILD__, ...init?.headers } })
+  const build = response.headers.get('X-App-Build')
+  if (build && __APP_BUILD__ && build !== __APP_BUILD__) window.dispatchEvent(new Event(outdatedEvent))
   const body = await response.json().catch(() => ({}))
   if (!response.ok) throw Object.assign(new Error(body.error || '서버에 연결할 수 없습니다.'), { status: response.status })
   return body as T
@@ -76,6 +80,12 @@ function SignedInWorkspace({ user, canInitialize, canManageUsers, onSignOut }: {
   const readTask = useRef<Promise<void> | null>(null)
   const writePending = useRef(false)
   const [signOutError, setSignOutError] = useState('')
+  const [outdated, setOutdated] = useState(false)
+  useEffect(() => {
+    const onOutdated = () => setOutdated(true)
+    window.addEventListener(outdatedEvent, onOutdated)
+    return () => window.removeEventListener(outdatedEvent, onOutdated)
+  }, [])
   const refresh = useCallback(async () => {
     if (busy.current || writePending.current) return
     busy.current = true
@@ -173,6 +183,7 @@ function SignedInWorkspace({ user, canInitialize, canManageUsers, onSignOut }: {
         <button type="button" className="ghost-button" disabled={saving} onClick={() => { setSignOutError(''); void onSignOut().catch(() => setSignOutError('로그아웃에 실패했습니다. 다시 시도해 주세요.')) }}>로그아웃</button>
       </div>
     </div>
+    {outdated && <div className="shared-workspace-outdated" role="alert"><span>프로그램이 새 버전으로 바뀌었습니다. 저장하기 전에 새로고침해 주세요.</span><button type="button" className="primary-button" onClick={() => window.location.reload()}>새로고침</button></div>}
     {managingUsers && <UserManager me={user.email} onClose={() => setManagingUsers(false)} />}
     {(message || signOutError) && <p className="shared-workspace-message" role="status">{signOutError || message}</p>}
     {!snapshot ? <div className="workspace-login"><p>{message || '공유 수주대장을 불러오는 중입니다.'}</p><button className="ghost-button" onClick={() => void refresh()}>다시 불러오기</button></div>
