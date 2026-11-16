@@ -90,7 +90,7 @@ export default function FreightExpenses({ expenses, projectLabel, onSave, initia
           <tbody>
             {rows.map(({ expense, category }) => { const project = projectLabel(expense.projectId); return <tr key={expense.id}>
               <td>{expense.date}</td>
-              <td><span className={`freight-tag ${freightGroups[category] === '장비' ? 'equipment' : 'transport'}`}>{label(category)}</span></td>
+              <td><span className="freight-tag" data-freight={category}>{label(category)}</span></td>
               <td className="freight-project" title={project.name}><strong>{project.orderNo}</strong> <small>{project.name}</small></td>
               <td>{expense.kind}</td>
               <td className="freight-text">{expense.vendor}</td>

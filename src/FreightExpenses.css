@@ -25,8 +25,9 @@
 .freight-table tfoot td { font-weight: 800; background: var(--surface-muted); }
 .freight-empty { padding: 28px; text-align: center !important; color: var(--text-muted); }
 .freight-tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
-.freight-tag.equipment { background: #fff1d6; color: #7a4b00; }
-.freight-tag.transport { background: #e1f0ff; color: #154a7a; }
+.freight-tag[data-freight='크레인'] { background: #fff1d6; color: #7a4b00; }
+.freight-tag[data-freight='지게차'] { background: #e6f4e1; color: #2f5d1f; }
+.freight-tag[data-freight='화물차'] { background: #e1f0ff; color: #154a7a; }
 .freight-class { min-height: 30px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 12px; }
 .freight-excluded { margin: 14px 0 0; font-size: 13px; }
 .freight-excluded summary { cursor: pointer; color: var(--text-muted); font-weight: 700; }
