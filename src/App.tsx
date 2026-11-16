@@ -67,6 +67,9 @@ const expenseMenus = [
   ['researchExpenses', '연구비 지출내역'],
   ['legacyExpenses', '22년 이전 지출내역'],
   ['freight', '장비·운반비 내역'],
+] as const
+// 바로빌 조회: the tax invoices and card approvals Barobill collects, posted to 지출내역 from here.
+const barobillMenus = [
   ['taxInvoices', '전자세금계산서 조회'],
   ['corporateCards', '법인카드 조회'],
 ] as const
@@ -621,13 +624,14 @@ function getProjectStatus(order: Order) {
   return getOrderStatus(order, today)
 }
 
-type IconName = 'home' | 'orders' | 'dashboard' | 'expenses' | 'worklogs' | 'deliveries' | 'contacts' | 'estimateCosts' | 'arrow' | 'plus'
+type IconName = 'home' | 'orders' | 'dashboard' | 'expenses' | 'taxInvoices' | 'worklogs' | 'deliveries' | 'contacts' | 'estimateCosts' | 'arrow' | 'plus'
 function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, string> = {
     home: 'M3 10 12 3l9 7M5 9v12h5v-7h4v7h5V9',
     orders: 'M8 4H5v17h14V4h-3M9 3h6v4H9zM9 11h6M9 15h6',
     dashboard: 'M4 20V10h4v10M10 20V4h4v16M16 20v-8h4v8',
     expenses: 'M3 6h18v14H3zM3 10h18M15 15h3M6 3v3',
+    taxInvoices: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3',
     worklogs: 'M4 5h16v16H4zM8 3v4M16 3v4M4 11h16M8 15h2M14 15h2',
     deliveries: 'M3 4h12v13H3zM15 9h4l3 4v4h-7M5 17a2 2 0 1 0 4 0M16 17a2 2 0 1 0 4 0M3 8h12',
     contacts: 'M16 21v-3a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v3M9 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8M17 3a4 4 0 0 1 0 8M22 21v-3a4 4 0 0 0-3-3.87',
@@ -2462,10 +2466,10 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
         <nav className="nav-tabs" aria-label="주요 메뉴">
           {([
             ['home', '홈'], ['orders', '수주대장'], ['dashboard', '공사현황'],
-            ['expenses', '지출내역'], ['worklogs', '작업일보'], ['contacts', '거래관리'], ['estimateCosts', '견적산출'],
+            ['expenses', '지출내역'], ['taxInvoices', '바로빌 조회'], ['worklogs', '작업일보'], ['contacts', '거래관리'], ['estimateCosts', '견적산출'],
           ] as const).map(([target, label]) => {
-            // 지출내역 and 거래관리 open their sub-menu while one of their screens is shown.
-            const menus = target === 'expenses' ? expenseMenus : target === 'contacts' ? tradeMenus : target === 'estimateCosts' ? estimateMenus : null
+            // 지출내역, 바로빌 조회, 거래관리 and 견적산출 open their sub-menu while one of their screens is shown.
+            const menus = target === 'expenses' ? expenseMenus : target === 'taxInvoices' ? barobillMenus : target === 'contacts' ? tradeMenus : target === 'estimateCosts' ? estimateMenus : null
             const inGroup = view === target || (target === 'worklogs' && view === 'worklogList') || !!menus?.some(([screen]) => screen === view)
             return <Fragment key={target}>
             <button className={inGroup ? 'active' : ''}
@@ -2493,7 +2497,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
         <header className="topbar">
           <div>
             <p className="eyebrow">
-              {expenseMenus.some(([screen]) => screen === view) ? '지출내역' : tradeMenus.some(([screen]) => screen === view) ? '거래관리' : estimateMenus.some(([screen]) => screen === view) ? '견적산출' : view === 'home'
+              {expenseMenus.some(([screen]) => screen === view) ? '지출내역' : barobillMenus.some(([screen]) => screen === view) ? '바로빌 조회' : tradeMenus.some(([screen]) => screen === view) ? '거래관리' : estimateMenus.some(([screen]) => screen === view) ? '견적산출' : view === 'home'
                 ? '홈'
                 : view === 'orders'
                 ? '수주대장'
