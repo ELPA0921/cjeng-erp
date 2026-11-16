@@ -1,4 +1,4 @@
-.freight-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.freight-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
 .freight-summary-item { display: grid; gap: 4px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow-soft); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
 .freight-summary-item span { color: var(--text-muted); font-size: 13px; font-weight: 700; }
 .freight-summary-item strong { font-size: 20px; line-height: 1.2; }
@@ -17,7 +17,7 @@
 .freight-table-wrap { height: max(420px, calc(100vh - 360px)); overflow: auto; }
 .freight-table { width: 100%; min-width: 1160px; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 13px; }
 .freight-table .col-date { width: 100px; }
-.freight-table .col-category { width: 76px; }
+.freight-table .col-category { width: 92px; }
 .freight-table .col-project { width: 96px; }
 .freight-table .col-kind { width: 108px; }
 .freight-table .col-vendor { width: 150px; }
@@ -35,6 +35,7 @@
 .freight-tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .freight-tag[data-freight='크레인'] { background: #fff1d6; color: #7a4b00; }
 .freight-tag[data-freight='지게차'] { background: #e6f4e1; color: #2f5d1f; }
+.freight-tag[data-freight='고소작업대'] { background: #efe6ff; color: #5b3a99; }
 .freight-tag[data-freight='화물차'] { background: #e1f0ff; color: #154a7a; }
 .freight-class { min-height: 30px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 12px; }
 .freight-excluded { margin: 14px 0 0; font-size: 13px; }

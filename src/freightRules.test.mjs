@@ -13,6 +13,20 @@ test('crane and forklift rentals are guessed from the vendor or the memo', () =>
   assert.equal(guessFreight(e('（유）부안화물', '장비대(지게차)')), '지게차')
 })
 
+test('고소작업대 and 스카이차 rentals are their own 장비, but moving one by truck is 운반비', () => {
+  assert.equal(guessFreight(e('주식회사 신진렌탈', '고소작업대 임대')), '고소작업대')
+  assert.equal(guessFreight(e('백두고소작업대리프트렌탈', '10/10~10/16 용암 세일건업')), '고소작업대')
+  assert.equal(guessFreight(e('글로벌스카이연합', '고소작업차 임대비')), '고소작업대')
+  assert.equal(guessFreight(e('전진스카이', '5t 스카이')), '고소작업대')
+  assert.equal(guessFreight(e('우진스카이', '스카이 사용료')), '고소작업대')
+  assert.equal(guessFreight(e('도원중기', '스카이')), '고소작업대')
+  assert.equal(guessFreight(e('윤하개별화물', '고소작업대 外 운송비')), '화물차')
+  assert.equal(guessFreight(e('스카이물류 홍성애', '운송료')), '화물차')
+  assert.equal(guessFreight(e('신인천스카이', '카고크레인사용료')), '크레인')
+  assert.equal(guessFreight(e('스카이', '숙박비')), null)
+  assert.equal(guessFreight(e('이마트24안산스카이점', '음료수')), null)
+})
+
 test('trucks are 운반비, while parcel services are left out', () => {
   assert.equal(guessFreight(e('개별화물', '운반비(공장->영광)')), '화물차')
   assert.equal(guessFreight(e('무림통운', '김포 -> 부안')), '화물차')
@@ -27,11 +41,10 @@ test('trucks are 운반비, while parcel services are left out', () => {
 test('other expenses are left out, and quick couplings are not 퀵서비스', () => {
   assert.equal(guessFreight(e('대성철물', '앵커볼트')), null)
   assert.equal(guessFreight(e('유압상사', '퀵커플링')), null)
-  assert.equal(guessFreight(e('신진렌탈', '고소작업대 임대')), null)
 })
 
 test('a category picked by hand wins over the guess, and 제외 keeps it off the list', () => {
-  assert.equal(freightOf(e('신진렌탈', '고소작업대 임대', '크레인')), '크레인')
+  assert.equal(freightOf(e('정읍렌탈', '렌탈 사용료', '고소작업대')), '고소작업대')
   assert.equal(freightOf(e('다이소', '화물차 와이어부러쉬', '제외')), null)
   assert.equal(freightOf(e('다이소', '화물차 와이어부러쉬')), '화물차')
   assert.equal(isFreightSetting('택배'), false)

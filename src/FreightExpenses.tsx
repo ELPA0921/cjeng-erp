@@ -4,8 +4,8 @@ import { getExpenseSupplyAmount, getExpenseVatAmount } from './expenseAmounts'
 import { freightCategories, freightGroups, freightLabel as label, freightOf, guessFreight, type FreightCategory } from './freightRules'
 import './FreightExpenses.css'
 
-type Filter = '전체' | '장비' | '크레인' | '지게차' | '운반비'
-const filters: Filter[] = ['전체', '장비', '크레인', '지게차', '운반비']
+type Filter = '전체' | '장비' | '크레인' | '지게차' | '고소작업대' | '운반비'
+const filters: Filter[] = ['전체', '장비', '크레인', '지게차', '고소작업대', '운반비']
 export type OutputTable = { title: string; columns: string[]; rows: (string | number)[][]; totals: (string | number)[][] }
 const money = (value: number) => value.toLocaleString('ko-KR')
 type SortKey = 'date' | 'category' | 'project' | 'kind' | 'vendor' | 'memo' | 'supply' | 'vat' | 'amount'
@@ -25,7 +25,7 @@ const columns: { label: string; key?: SortKey; className: string }[] = [
 const matchesFilter = (filter: Filter, category: FreightCategory) => filter === '전체' || filter === label(category) || filter === freightGroups[category]
 
 /**
- * 장비·운반비 내역: the year's 크레인·지게차 and 화물차 expenses from every 공사, 관리비 and 연구.
+ * 장비·운반비 내역: the year's 크레인·지게차·고소작업대 and 화물차 expenses from every 공사, 관리비 and 연구.
  * An expense shows up here as soon as it is registered (by hand or from a posted tax invoice or card
  * row) when its 거래처 or 내용 reads like one; 분류 changes the category or leaves it out.
  */
@@ -74,7 +74,7 @@ export default function FreightExpenses({ expenses, projectLabel, onSave, initia
   const excluded = expenses.filter(expense => expense.freight === '제외' && expense.date.startsWith(year)).sort((a, b) => a.date.localeCompare(b.date))
   const total = (list: Expense[]) => ({ count: list.length, supply: list.reduce((sum, e) => sum + getExpenseSupplyAmount(e), 0), vat: list.reduce((sum, e) => sum + getExpenseVatAmount(e), 0), amount: list.reduce((sum, e) => sum + e.amount, 0) })
   const shownTotal = total(rows.map(row => row.expense))
-  const summary = (['장비', '크레인', '지게차', '운반비'] as Filter[]).map(item => ({ item, ...total(ofYear.filter(row => matchesFilter(item, row.category)).map(row => row.expense)) }))
+  const summary = (['장비', '크레인', '지게차', '고소작업대', '운반비'] as Filter[]).map(item => ({ item, ...total(ofYear.filter(row => matchesFilter(item, row.category)).map(row => row.expense)) }))
 
   // A column clicked again flips its order; another column starts from the smallest.
   function toggleSort(key: SortKey | undefined) {
@@ -113,7 +113,7 @@ export default function FreightExpenses({ expenses, projectLabel, onSave, initia
     </div>
     <div className="panel full">
       <div className="panel-heading freight-heading">
-        <div><h3>{title}</h3><span>지출을 등록하면 거래처·내용에 크레인, 지게차(중기·건설기계), 화물, 운반, 운송 등이 있을 때 자동으로 여기에 들어옵니다. 택배는 넣지 않습니다. 분류가 틀리면 오른쪽 「분류 변경」에서 바꾸거나 제외하세요.</span></div>
+        <div><h3>{title}</h3><span>지출을 등록하면 거래처·내용에 크레인, 지게차(중기·건설기계), 고소작업대(스카이차), 화물, 운반, 운송 등이 있을 때 자동으로 여기에 들어옵니다. 택배는 넣지 않습니다. 분류가 틀리면 오른쪽 「분류 변경」에서 바꾸거나 제외하세요.</span></div>
         <div className="year-switch" aria-label="년도">{years.map(item => <button key={item} type="button" className={item === year ? 'active' : ''} onClick={() => setYear(item)}>{item}</button>)}</div>
       </div>
       <div className="freight-toolbar">
