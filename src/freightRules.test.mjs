@@ -13,18 +13,27 @@ test('crane and forklift rentals are guessed from the vendor or the memo', () =>
   assert.equal(guessFreight(e('（유）부안화물', '장비대(지게차)')), '지게차')
 })
 
-test('고소작업대 and 스카이차 rentals are their own 장비, but moving one by truck is 운반비', () => {
+test('고소작업대 and 렌탈 are 고소작업대, but moving one by truck is 운반비', () => {
   assert.equal(guessFreight(e('주식회사 신진렌탈', '고소작업대 임대')), '고소작업대')
   assert.equal(guessFreight(e('백두고소작업대리프트렌탈', '10/10~10/16 용암 세일건업')), '고소작업대')
   assert.equal(guessFreight(e('글로벌스카이연합', '고소작업차 임대비')), '고소작업대')
-  assert.equal(guessFreight(e('전진스카이', '5t 스카이')), '고소작업대')
-  assert.equal(guessFreight(e('우진스카이', '스카이 사용료')), '고소작업대')
-  assert.equal(guessFreight(e('도원중기', '스카이')), '고소작업대')
+  assert.equal(guessFreight(e('정읍렌탈', '렌탈 사용료')), '고소작업대')
   assert.equal(guessFreight(e('윤하개별화물', '고소작업대 外 운송비')), '화물차')
-  assert.equal(guessFreight(e('스카이물류 홍성애', '운송료')), '화물차')
+})
+
+test('스카이, 사다리차 and 포크레인 are 장비 of their own', () => {
+  assert.equal(guessFreight(e('전진스카이', '5t 스카이')), '스카이')
+  assert.equal(guessFreight(e('우진스카이', '스카이 사용료')), '스카이')
+  assert.equal(guessFreight(e('도원중기', '스카이')), '스카이')
+  assert.equal(guessFreight(e('대건스카이', '장비사용료')), '스카이')
   assert.equal(guessFreight(e('신인천스카이', '카고크레인사용료')), '크레인')
+  assert.equal(guessFreight(e('스카이물류 홍성애', '운송료')), '화물차')
   assert.equal(guessFreight(e('스카이', '숙박비')), null)
   assert.equal(guessFreight(e('이마트24안산스카이점', '음료수')), null)
+  assert.equal(guessFreight(e('김영기화물', '사다리차 사용료')), '사다리차')
+  assert.equal(guessFreight(e('우리스카이차크레인', '사다리차 사용료')), '사다리차')
+  assert.equal(guessFreight(e('삼현건설기계', '포크레인 사용료')), '포크레인')
+  assert.equal(guessFreight(e('대성중기', '굴삭기 임대')), '포크레인')
 })
 
 test('trucks are 운반비, while parcel services are left out', () => {

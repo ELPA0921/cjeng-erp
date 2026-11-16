@@ -1,9 +1,8 @@
-.freight-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.freight-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .freight-summary-item { display: grid; gap: 4px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow-soft); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
 .freight-summary-item span { color: var(--text-muted); font-size: 13px; font-weight: 700; }
 .freight-summary-item strong { font-size: 20px; line-height: 1.2; }
 .freight-summary-item small { color: var(--text-muted); font-size: 12px; }
-.freight-summary-item.group { background: var(--surface-muted); }
 .freight-summary-item.active { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
 .freight-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .freight-heading > div:first-child { max-width: 760px; }
@@ -36,6 +35,9 @@
 .freight-tag[data-freight='크레인'] { background: #fff1d6; color: #7a4b00; }
 .freight-tag[data-freight='지게차'] { background: #e6f4e1; color: #2f5d1f; }
 .freight-tag[data-freight='고소작업대'] { background: #efe6ff; color: #5b3a99; }
+.freight-tag[data-freight='스카이'] { background: #dff5f2; color: #11655c; }
+.freight-tag[data-freight='사다리차'] { background: #fde6ef; color: #8a2350; }
+.freight-tag[data-freight='포크레인'] { background: #ece8e3; color: #5a4632; }
 .freight-tag[data-freight='화물차'] { background: #e1f0ff; color: #154a7a; }
 .freight-class { min-height: 30px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 12px; }
 .freight-excluded { margin: 14px 0 0; font-size: 13px; }
@@ -46,3 +48,10 @@
 .freight-hint { margin: 12px 0 0; color: var(--text-muted); font-size: 12px; }
 @media (max-width: 900px) { .freight-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .freight-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* 장비's sub-menu: one button per kind with its count and 공급가액. */
+.freight-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 14px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-muted); }
+.freight-kinds button { display: grid; gap: 2px; min-width: 104px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.freight-kinds button span { font-size: 13px; font-weight: 800; }
+.freight-kinds button small { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+.freight-kinds button.active { border-color: var(--accent); background: var(--accent); color: #fff; }
+.freight-kinds button.active small { color: #ffffffcc; }
