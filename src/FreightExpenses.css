@@ -13,17 +13,25 @@
 .freight-filters button { min-height: 32px; padding: 4px 12px; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
 .freight-filters button.active { background: var(--accent); color: #fff; }
 .freight-search { flex: 1 1 220px; max-width: 320px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
-.freight-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.freight-table th, .freight-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
-.freight-table th { white-space: nowrap; }
-.freight-table td:first-child { white-space: nowrap; }
+/* One fixed-size table: the same column widths whatever is shown, rows scroll under a fixed header and 합계. */
+.freight-table-wrap { height: max(420px, calc(100vh - 360px)); overflow: auto; }
+.freight-table { width: 100%; min-width: 1260px; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.freight-table .col-date { width: 100px; }
+.freight-table .col-category { width: 76px; }
+.freight-table .col-project { width: 200px; }
+.freight-table .col-kind { width: 108px; }
+.freight-table .col-vendor { width: 150px; }
+.freight-table .col-money { width: 100px; }
+.freight-table .col-class { width: 124px; }
+.freight-table th, .freight-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: center; vertical-align: middle; white-space: nowrap; }
+.freight-table thead th { position: sticky; top: 0; z-index: 2; background: var(--surface-muted); }
+.freight-table td.clip { overflow: hidden; text-overflow: ellipsis; }
+.freight-table td.memo { text-align: left; }
 .freight-table td small { color: var(--text-muted); }
-.freight-project { min-width: 150px; }
-.freight-project small { display: block; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.freight-table td.freight-text { min-width: 120px; }
-.freight-table .number { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.freight-table tfoot td { font-weight: 800; background: var(--surface-muted); }
-.freight-empty { padding: 28px; text-align: center !important; color: var(--text-muted); }
+.freight-table .number { text-align: right; font-variant-numeric: tabular-nums; }
+.freight-table tfoot td { position: sticky; bottom: 0; z-index: 1; font-weight: 800; background: var(--surface-muted); border-top: 1px solid var(--line); }
+.freight-empty { padding: 28px; color: var(--text-muted); }
+.freight-table .freight-class { width: 100%; }
 .freight-tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .freight-tag[data-freight='크레인'] { background: #fff1d6; color: #7a4b00; }
 .freight-tag[data-freight='지게차'] { background: #e6f4e1; color: #2f5d1f; }

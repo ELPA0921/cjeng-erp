@@ -8,6 +8,20 @@ type Filter = '전체' | '장비' | '크레인' | '지게차' | '운반비'
 const filters: Filter[] = ['전체', '장비', '크레인', '지게차', '운반비']
 export type OutputTable = { title: string; columns: string[]; rows: (string | number)[][]; totals: (string | number)[][] }
 const money = (value: number) => value.toLocaleString('ko-KR')
+type SortKey = 'date' | 'category' | 'project' | 'kind' | 'vendor' | 'memo' | 'supply' | 'vat' | 'amount'
+/** The table's columns: header, sort key, and how the column is aligned. 분류 변경 has no sort. */
+const columns: { label: string; key?: SortKey; className: string }[] = [
+  { label: '일자', key: 'date', className: 'col-date' },
+  { label: '분류', key: 'category', className: 'col-category' },
+  { label: '공사', key: 'project', className: 'col-project' },
+  { label: '구분', key: 'kind', className: 'col-kind' },
+  { label: '거래처', key: 'vendor', className: 'col-vendor' },
+  { label: '내용', key: 'memo', className: 'col-memo' },
+  { label: '공급가액', key: 'supply', className: 'col-money' },
+  { label: '부가세', key: 'vat', className: 'col-money' },
+  { label: '합계', key: 'amount', className: 'col-money' },
+  { label: '분류 변경', className: 'col-class' },
+]
 const matchesFilter = (filter: Filter, category: FreightCategory) => filter === '전체' || filter === label(category) || filter === freightGroups[category]
 
 /**
@@ -30,17 +44,42 @@ export default function FreightExpenses({ expenses, projectLabel, onSave, initia
   const [query, setQuery] = useState('')
   const [showExcluded, setShowExcluded] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [sort, setSort] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'date', direction: 'asc' })
 
   const ofYear = listed.filter(row => row.expense.date.startsWith(year))
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
   const searchText = (expense: Expense) => { const project = projectLabel(expense.projectId); return [expense.date, project.orderNo, project.name, expense.kind, expense.vendor, expense.memo, expense.note ?? ''].join(' ').toLowerCase() }
   const rows = ofYear
     .filter(row => matchesFilter(filter, row.category) && words.every(word => searchText(row.expense).includes(word)))
-    .sort((a, b) => a.expense.date.localeCompare(b.expense.date) || a.expense.vendor.localeCompare(b.expense.vendor))
+    .sort((a, b) => {
+      const value = (row: typeof a): string | number => {
+        const { expense } = row
+        switch (sort.key) {
+          case 'date': return expense.date
+          case 'category': return freightCategories.indexOf(row.category)
+          case 'project': return projectLabel(expense.projectId).orderNo
+          case 'kind': return expense.kind
+          case 'vendor': return expense.vendor
+          case 'memo': return expense.memo
+          case 'supply': return getExpenseSupplyAmount(expense)
+          case 'vat': return getExpenseVatAmount(expense)
+          case 'amount': return expense.amount
+        }
+      }
+      const x = value(a), y = value(b)
+      const order = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'ko')
+      // Rows that tie stay in date order whichever way the column is sorted.
+      return (sort.direction === 'asc' ? order : -order) || a.expense.date.localeCompare(b.expense.date) || a.expense.vendor.localeCompare(b.expense.vendor, 'ko')
+    })
   const excluded = expenses.filter(expense => expense.freight === '제외' && expense.date.startsWith(year)).sort((a, b) => a.date.localeCompare(b.date))
   const total = (list: Expense[]) => ({ count: list.length, supply: list.reduce((sum, e) => sum + getExpenseSupplyAmount(e), 0), vat: list.reduce((sum, e) => sum + getExpenseVatAmount(e), 0), amount: list.reduce((sum, e) => sum + e.amount, 0) })
   const shownTotal = total(rows.map(row => row.expense))
   const summary = (['장비', '크레인', '지게차', '운반비'] as Filter[]).map(item => ({ item, ...total(ofYear.filter(row => matchesFilter(item, row.category)).map(row => row.expense)) }))
+
+  // A column clicked again flips its order; another column starts from the smallest.
+  function toggleSort(key: SortKey | undefined) {
+    if (key) setSort(sort.key === key ? { key, direction: sort.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: 'asc' })
+  }
 
   async function classify(expense: Expense, value: string) {
     if (saving) return
@@ -84,17 +123,22 @@ export default function FreightExpenses({ expenses, projectLabel, onSave, initia
         <input type="search" className="freight-search" placeholder="거래처, 내용, 공사 검색" aria-label="장비·운반비 검색" value={query} onChange={event => setQuery(event.target.value)} />
         {renderOutput(outputTable)}
       </div>
-      <div className="table-wrap">
+      <div className="table-wrap freight-table-wrap">
         <table className="freight-table">
-          <thead><tr><th>일자</th><th>분류</th><th>공사</th><th>구분</th><th>거래처</th><th>내용</th><th className="number">공급가액</th><th className="number">부가세</th><th className="number">합계</th><th>분류 변경</th></tr></thead>
+          <colgroup>{columns.map(column => <col key={column.label} className={column.className} />)}</colgroup>
+          <thead><tr>{columns.map(column => <th key={column.label} scope="col" aria-sort={column.key && sort.key === column.key ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}>
+            {column.key ? <button type="button" className="sort-button" onClick={() => toggleSort(column.key)}>
+              {column.label}{sort.key === column.key ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}
+            </button> : column.label}
+          </th>)}</tr></thead>
           <tbody>
             {rows.map(({ expense, category }) => { const project = projectLabel(expense.projectId); return <tr key={expense.id}>
               <td>{expense.date}</td>
               <td><span className="freight-tag" data-freight={category}>{label(category)}</span></td>
-              <td className="freight-project" title={project.name}><strong>{project.orderNo}</strong> <small>{project.name}</small></td>
-              <td>{expense.kind}</td>
-              <td className="freight-text">{expense.vendor}</td>
-              <td className="freight-text">{expense.memo}</td>
+              <td className="clip" title={`${project.orderNo} ${project.name}`}><strong>{project.orderNo}</strong> <small>{project.name}</small></td>
+              <td className="clip" title={expense.kind}>{expense.kind}</td>
+              <td className="clip" title={expense.vendor}>{expense.vendor}</td>
+              <td className="clip memo" title={expense.memo}>{expense.memo}</td>
               <td className="number">{money(getExpenseSupplyAmount(expense))}</td>
               <td className="number">{money(getExpenseVatAmount(expense))}</td>
               <td className="number">{money(expense.amount)}</td>
