@@ -5,7 +5,7 @@
 .freight-summary-item small { color: var(--text-muted); font-size: 12px; }
 .freight-summary-item.active { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
 .freight-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.freight-heading > div:first-child { max-width: 760px; }
+.freight-heading > div:first-child { flex: 1 1 400px; max-width: 760px; }
 .freight-heading > div:first-child span { display: block; margin-top: 4px; font-weight: 500; line-height: 1.6; }
 .freight-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 14px; }
 .freight-filters { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 8px; background: var(--surface-muted); }
@@ -55,4 +55,4 @@
 .freight-kinds button small { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
 .freight-kinds button.active { border-color: var(--accent); background: var(--accent); color: #fff; }
 .freight-kinds button.active small { color: #ffffffcc; }
-.freight-year { min-width: 120px; min-height: 38px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; font-size: 14px; font-weight: 800; cursor: pointer; }
+.freight-year { flex: none; width: auto; min-width: 120px; min-height: 38px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; font-size: 14px; font-weight: 800; cursor: pointer; }
