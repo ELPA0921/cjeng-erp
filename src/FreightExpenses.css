@@ -18,6 +18,9 @@
 .freight-table th { white-space: nowrap; }
 .freight-table td:first-child { white-space: nowrap; }
 .freight-table td small { color: var(--text-muted); }
+.freight-project { min-width: 150px; }
+.freight-project small { display: block; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.freight-table td.freight-text { min-width: 120px; }
 .freight-table .number { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .freight-table tfoot td { font-weight: 800; background: var(--surface-muted); }
 .freight-empty { padding: 28px; text-align: center !important; color: var(--text-muted); }
