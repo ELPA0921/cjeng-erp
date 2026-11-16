@@ -46,10 +46,11 @@ export default function InvoiceMatchModal({ row, expenses, cardAccounting, order
   const inMonth = (expense: Expense) => !!month && expense.date.startsWith(month)
   const sameVendor = (expense: Expense) => !!vendorKey && foldVendor(expense.vendor).includes(vendorKey)
   const found = expenses.filter(expense => inMonth(expense) && sameVendor(expense)).sort((a, b) => a.date.localeCompare(b.date) || (a.sequence ?? 0) - (b.sequence ?? 0))
-  // Expenses another invoice or card row already covers cannot be counted again.
-  const candidates = found.filter(expense => !linkedElsewhere.has(expense.id))
-  const hidden = found.length - candidates.length
-  const isTicked = (expense: Expense) => picked[expense.id] ?? (entry?.mode === '대조' ? linkedHere.has(expense.id) : true)
+  // Expenses posted from 법인카드·전자세금계산서 조회 (another row) are listed greyed out: they
+  // cannot be ticked or corrected, and never count toward the total.
+  const locked = (expense: Expense) => linkedElsewhere.has(expense.id)
+  const lockedCount = found.filter(locked).length
+  const isTicked = (expense: Expense) => !locked(expense) && (picked[expense.id] ?? (entry?.mode === '대조' ? linkedHere.has(expense.id) : true))
   const toggle = (id: string, on: boolean) => { setPicked(current => ({ ...current, [id]: on })); setError('') }
   const projectOf = (expense: Expense) => {
     const orderNo = orderNoOfProject(orders, expense.projectId)
@@ -60,7 +61,7 @@ export default function InvoiceMatchModal({ row, expenses, cardAccounting, order
   const amountOf = (expense: Expense) => expense.id in supplyEdits ? withVat(supplyOf(expense)) : expense.amount
 
   const lines: MatchLine[] = [
-    ...candidates.filter(isTicked).map(expense => ({ expenseId: expense.id, date: expense.date, orderNo: projectOf(expense).orderNo, memo: expense.memo, supplyAmount: supplyOf(expense), amount: amountOf(expense) })),
+    ...found.filter(isTicked).map(expense => ({ expenseId: expense.id, date: expense.date, orderNo: projectOf(expense).orderNo, memo: expense.memo, supplyAmount: supplyOf(expense), amount: amountOf(expense) })),
     ...added.map(item => { const supply = Number(digits(item.supply) || 0); return { date: item.date, orderNo: item.orderNo.trim(), memo: item.memo.trim(), supplyAmount: supply, amount: withVat(supply) } }),
   ]
   const totals = matchTotals(row, lines)
@@ -99,18 +100,20 @@ export default function InvoiceMatchModal({ row, expenses, cardAccounting, order
         <table>
           <thead><tr><th aria-label="포함" /><th>일자</th><th>수주번호</th><th>내용</th><th>구분</th><th>공급가액</th><th>합계</th></tr></thead>
           <tbody>
-            {candidates.map(expense => {
-              const on = isTicked(expense), { orderNo, name } = projectOf(expense)
-              return <tr key={expense.id} className={on ? undefined : 'is-off'}>
-                <td className="invoice-match-check"><input type="checkbox" aria-label={`${expense.date} ${expense.memo} 포함`} checked={on} onChange={event => toggle(expense.id, event.target.checked)} /></td>
+            {found.map(expense => {
+              const on = isTicked(expense), fixed = locked(expense), { orderNo, name } = projectOf(expense)
+              return <tr key={expense.id} className={fixed ? 'is-locked' : on ? undefined : 'is-off'} title={fixed ? `${expense.kind} 조회에서 이미 회계반영된 지출이라 합계에 넣지 않습니다.` : undefined}>
+                <td className="invoice-match-check"><input type="checkbox" aria-label={`${expense.date} ${expense.memo} 포함`} checked={on} disabled={fixed} onChange={event => toggle(expense.id, event.target.checked)} /></td>
                 <td>{expense.date}</td>
                 <td className="invoice-match-project"><strong>{orderNo || '-'}</strong><small>{name}</small></td>
                 <td className="invoice-match-memo" title={expense.memo}>{expense.memo || '-'}</td>
-                <td className="invoice-match-kind">{expense.kind}</td>
-                <td className="invoice-match-money"><input aria-label="공급가액" inputMode="numeric" disabled={!on}
-                  className={expense.id in supplyEdits ? 'is-edited' : undefined}
-                  value={money(supplyOf(expense))}
-                  onChange={event => { setSupplyEdits(current => ({ ...current, [expense.id]: digits(event.target.value) })); setError('') }} /></td>
+                <td className="invoice-match-kind">{expense.kind}{fixed && <small className="invoice-match-posted">조회에서 반영됨</small>}</td>
+                <td className="invoice-match-money">{fixed
+                  ? <span className="invoice-match-fixed">{money(getExpenseSupplyAmount(expense))}</span>
+                  : <input aria-label="공급가액" inputMode="numeric" disabled={!on}
+                    className={expense.id in supplyEdits ? 'is-edited' : undefined}
+                    value={money(supplyOf(expense))}
+                    onChange={event => { setSupplyEdits(current => ({ ...current, [expense.id]: digits(event.target.value) })); setError('') }} />}</td>
                 <td className="card-accounting-amount">{money(amountOf(expense))}</td>
               </tr>
             })}
@@ -123,13 +126,13 @@ export default function InvoiceMatchModal({ row, expenses, cardAccounting, order
               <td className="invoice-match-money"><input aria-label="공급가액" inputMode="numeric" value={digits(item.supply) ? money(Number(digits(item.supply))) : ''} placeholder="0" onChange={event => updateAdded(item.key, { supply: digits(event.target.value) })} /></td>
               <td className="card-accounting-amount">{money(withVat(Number(digits(item.supply) || 0)))}</td>
             </tr>)}
-            {candidates.length === 0 && added.length === 0 && <tr><td colSpan={7} className="invoice-match-empty">{vendorKey && month ? `${month} ${vendor}의 지출내역이 없습니다.` : '거래처와 월을 입력해 주세요.'}</td></tr>}
+            {found.length === 0 && added.length === 0 && <tr><td colSpan={7} className="invoice-match-empty">{vendorKey && month ? `${month} ${vendor}의 지출내역이 없습니다.` : '거래처와 월을 입력해 주세요.'}</td></tr>}
           </tbody>
         </table>
       </div>
       <div className="invoice-match-tools">
         <button type="button" className="ghost-button" disabled={saving} onClick={() => setAdded(current => [...current, { key: nextKey++, date: row.date, orderNo: '', memo: '', supply: '' }])}>+ 빠진 지출 추가</button>
-        {hidden > 0 && <small>다른 세금계산서·카드 내역에 이미 반영된 {hidden}건은 목록에서 뺐습니다.</small>}
+        {lockedCount > 0 && <small>회색 {lockedCount}건은 법인카드·전자세금계산서 조회에서 이미 회계반영된 지출이라 고칠 수 없고 합계에도 넣지 않습니다.</small>}
       </div>
       <table className="invoice-match-compare">
         <thead><tr><th /><th>공급가액</th><th>합계</th></tr></thead>

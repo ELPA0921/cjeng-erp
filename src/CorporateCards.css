@@ -216,3 +216,7 @@
 .invoice-match-rows input:not([type='checkbox']) { width: 100%; min-height: 34px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--text); font: inherit; font-size: 13px; }
 .invoice-match-rows input:disabled { background: #f5f6f5; }
 .invoice-match-rows input[aria-invalid='true'] { border-color: #d4796a; background: #fff6f4; }
+.invoice-match-rows tr.is-locked td { color: #a3aaa6; background: #f3f4f3; }
+.invoice-match-rows tr.is-locked td strong { color: #a3aaa6; }
+.invoice-match-rows .invoice-match-posted { display: block; margin-top: 2px; color: #8a918d; font-size: 11px; }
+.invoice-match-rows .invoice-match-fixed { display: block; padding-right: 10px; text-align: right; font-variant-numeric: tabular-nums; }
