@@ -24,7 +24,7 @@ export default function SplitChoiceModal({ row, onMatch, onSplit, onClose }: {
         </button>
         <button type="button" onClick={onSplit}>
           <strong>새로 나눠서 반영</strong>
-          <span>공급가액을 수주별로 직접 나눠, 나눈 만큼 지출을 새로 등록합니다.</span>
+          <span>여러 공사의 비용을 한 번에 끊은 세금계산서처럼, 아직 지출내역에 등록하지 않은 건에 씁니다. 공급가액을 수주별로 직접 나눠, 나눈 만큼 지출을 새로 등록합니다.</span>
         </button>
       </div>
     </section>
