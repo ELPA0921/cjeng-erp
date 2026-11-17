@@ -5,8 +5,8 @@ import ModalClose from './ModalClose'
 import YearPicker from './YearPicker'
 import './FreightExpenses.css'
 
-type Group = '전체' | '장비' | '운반비'
-const groups: Group[] = ['전체', '장비', '운반비']
+type Group = '장비' | '운반비'
+const groups: Group[] = ['장비', '운반비']
 export type OutputTable = { title: string; columns: string[]; rows: (string | number)[][]; totals: (string | number)[][] }
 export type FreightProject = { orderNo: string; name: string; client: string; region: string }
 const money = (value: number) => value.toLocaleString('ko-KR')
@@ -33,7 +33,7 @@ const detailFields: Record<'장비' | '운반비', { field: DetailField; label: 
 }
 
 /** 장비 has a sub-menu of its kinds (크레인, 지게차, ...); 운반비 is one kind. */
-const matches = (group: Group, sub: EquipmentCategory | null, category: FreightCategory) => group === '전체' || (freightGroupOf(category) === group && (!sub || category === sub))
+const matches = (group: Group, sub: EquipmentCategory | null, category: FreightCategory) => freightGroupOf(category) === group && (!sub || category === sub)
 
 /**
  * 장비·운반비 내역: 장비 (크레인, 지게차, 고소작업대, 스카이, 사다리차, 포크레인) and 운반비 (화물차)
@@ -57,7 +57,7 @@ export default function FreightExpenses({ expenses, projectInfo, vendorPhone, on
   const [year, setYear] = useState('전체')
   const inYear = (date: string) => year === '전체' ? date >= firstYear : date.startsWith(year)
   const yearLabel = year === '전체' ? '전체' : `${year}년`
-  const [group, setGroup] = useState<Group>('전체')
+  const [group, setGroup] = useState<Group>('장비')
   const [sub, setSub] = useState<EquipmentCategory | null>(null)
   const [query, setQuery] = useState('')
   const [showExcluded, setShowExcluded] = useState(false)
@@ -90,14 +90,14 @@ export default function FreightExpenses({ expenses, projectInfo, vendorPhone, on
     common.vendor, common.memo,
     { id: 'hours', label: '사용시간', className: 'col-hours', value: row => row.expense.freightHours ?? '' },
     common.amount, common.note,
-  ] : group === '운반비' ? [
+  ] : [
     common.date, common.orderNo, common.client,
     { id: 'from', label: '출발지', className: 'col-place', value: row => route(row, 'from').text, cell: row => filledCell(route(row, 'from'), '내용에서 읽음') },
     { id: 'to', label: '목적지', className: 'col-place', value: row => route(row, 'to').text, cell: row => filledCell(route(row, 'to'), '내용에서 읽음') },
     common.vendor, common.memo,
     { id: 'contact', label: '연락처', className: 'col-contact', value: row => contact(row).text, cell: row => filledCell(contact(row), '거래관리의 거래처 연락처') },
     common.amount, common.note,
-  ] : [common.date, common.category, common.orderNo, common.client, common.vendor, common.memo, common.amount, common.note]
+  ]
 
   const ofYear = listed.filter(row => inYear(row.expense.date))
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
@@ -152,7 +152,7 @@ export default function FreightExpenses({ expenses, projectInfo, vendorPhone, on
     if (saved) { setEditing(null); setSelected([]) }
   }
 
-  const title = `${yearLabel} 장비·운반비 내역${group === '전체' ? '' : sub ? ` (장비 · ${sub})` : ` (${group})`}`
+  const title = `${yearLabel} 장비·운반비 내역${sub ? ` (장비 · ${sub})` : ` (${group})`}`
   const amountIndex = columns.findIndex(column => column.id === 'amount')
   const outputTable: OutputTable = {
     title,
@@ -173,7 +173,7 @@ export default function FreightExpenses({ expenses, projectInfo, vendorPhone, on
   return <section className="content-grid single freight-view">
     <div className="freight-summary" aria-label={`${yearLabel} 분류별 합계`}>
       {summary.map(({ item, count, amount }) => <button key={item} type="button" aria-pressed={group === item} className={`freight-summary-item${group === item ? ' active' : ''}`} onClick={() => pickGroup(item)}>
-        <span>{item === '전체' ? '장비 + 운반비' : item}</span><strong>{money(amount)}</strong><small>{count}건 · 합계</small>
+        <span>{item}</span><strong>{money(amount)}</strong><small>{count}건 · 합계</small>
       </button>)}
     </div>
     <div className="panel full">
@@ -189,7 +189,7 @@ export default function FreightExpenses({ expenses, projectInfo, vendorPhone, on
         {renderOutput(outputTable)}
       </div>
       {group === '장비' && <div className="freight-kinds" role="tablist" aria-label="장비 종류">
-        <button type="button" role="tab" aria-selected={!sub} className={!sub ? 'active' : ''} onClick={() => { setSub(null); setSelected([]) }}><span>장비 전체</span><small>{summary[1].count}건 · {money(summary[1].amount)}</small></button>
+        <button type="button" role="tab" aria-selected={!sub} className={!sub ? 'active' : ''} onClick={() => { setSub(null); setSelected([]) }}><span>장비 전체</span><small>{summary[0].count}건 · {money(summary[0].amount)}</small></button>
         {kinds.map(({ item, count, amount }) => <button key={item} type="button" role="tab" aria-selected={sub === item} className={sub === item ? 'active' : ''} data-freight={item} onClick={() => { setSub(item); setSelected([]) }}><span>{item}</span><small>{count}건 · {money(amount)}</small></button>)}
       </div>}
       <div className="freight-actions">
@@ -218,7 +218,7 @@ export default function FreightExpenses({ expenses, projectInfo, vendorPhone, on
               <td><input type="checkbox" aria-label={`선택 ${row.expense.date} ${row.expense.vendor}`} checked={checked} onChange={() => toggleRow(row.expense.id)} /></td>
               {columns.map(column => { const value = column.value(row); return <td key={column.id} className={`clip${column.align ? ` ${column.align}` : ''}`} title={column.title?.(row) ?? (typeof value === 'string' ? value : undefined)}>{column.cell ? column.cell(row) : value}</td> })}
             </tr> })}
-            {!rows.length && <tr><td colSpan={columns.length + 1} className="freight-empty">{yearLabel} {group === '전체' ? '' : `${sub ?? group} `}내역이 없습니다.</td></tr>}
+            {!rows.length && <tr><td colSpan={columns.length + 1} className="freight-empty">{yearLabel} {sub ?? group} 내역이 없습니다.</td></tr>}
           </tbody>
           {rows.length > 0 && <tfoot><tr>
             <td colSpan={amountIndex + 1}>합계 {shownTotal.count}건</td>
