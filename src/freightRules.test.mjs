@@ -47,6 +47,12 @@ test('trucks are 운반비, while parcel services are left out', () => {
   assert.equal(guessFreight(e('우정사업본부(우체국)', '명함 택배')), null)
 })
 
+test('waste disposal and fuel stops are not 운반비', () => {
+  assert.equal(guessFreight(e('유성엔텍', '폐기물 수집 운반 처리비')), null)
+  assert.equal(guessFreight(e('(주) 드림개발', '폐기물 운반 처리비')), null)
+  assert.equal(guessFreight(e('씨제이대한통운(주)행담도상행주유소', '0638경유')), null)
+})
+
 test('other expenses are left out, and quick couplings are not 퀵서비스', () => {
   assert.equal(guessFreight(e('대성철물', '앵커볼트')), null)
   assert.equal(guessFreight(e('유압상사', '퀵커플링')), null)

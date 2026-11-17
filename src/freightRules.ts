@@ -30,11 +30,15 @@ const forklift = /지게차|중기|건설기계/
 const moving = /운송|운반|운임/
 // Parcel and small-freight services, mostly paid by card for a part or two: left out.
 const parcel = /택배|대신(정기)?화물|경동화물|합동화물|천일화물|우체국|퀵서비스|퀵배송/
+// 폐기물 수집·운반·처리 is a disposal contract, and a fuel stop ("대한통운 행담도 주유소") is fuel: neither is 운반비.
+const disposal = /폐기물/
+const fuel = /주유소/
 const truck = /화물|운반|운송|운임|물류|통운|상운|운수|용달|탁송/
 
 /** What the 거래처 and 내용 say the expense is, or null when it is none of them. */
 export function guessFreight(expense: Pick<Expense, 'vendor' | 'memo'>): FreightCategory | null {
   const text = `${expense.memo} ${expense.vendor}`
+  if (disposal.test(text) || fuel.test(expense.vendor)) return null
   const carried = moving.test(expense.memo)
   if (!carried) {
     if (ladder.test(text)) return '사다리차'
