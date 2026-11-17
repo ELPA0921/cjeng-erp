@@ -12,25 +12,37 @@
 .freight-filters button { min-height: 32px; padding: 4px 12px; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
 .freight-filters button.active { background: var(--accent); color: #fff; }
 .freight-search { flex: 1 1 220px; max-width: 320px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
-/* One fixed-size table: the same column widths whatever is shown, rows scroll under a fixed header and 합계. */
-.freight-table-wrap { height: max(420px, calc(100vh - 360px)); overflow: auto; }
-.freight-table { width: 100%; min-width: 1160px; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+/* One fixed-size table: set column widths per view, rows scroll under a fixed header and 합계. */
+.freight-table-wrap { height: max(420px, calc(100vh - 400px)); overflow: auto; }
+.freight-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.freight-table .col-check { width: 40px; }
 .freight-table .col-date { width: 100px; }
 .freight-table .col-category { width: 92px; }
-.freight-table .col-project { width: 96px; }
-.freight-table .col-kind { width: 108px; }
-.freight-table .col-vendor { width: 150px; }
-.freight-table .col-money { width: 100px; }
-.freight-table .col-class { width: 124px; }
+.freight-table .col-order { width: 84px; }
+.freight-table .col-client { width: 120px; }
+.freight-table .col-place { width: 130px; }
+.freight-table .col-vendor { width: 140px; }
+.freight-table .col-hours { width: 90px; }
+.freight-table .col-contact { width: 124px; }
+.freight-table .col-money { width: 104px; }
+.freight-table .col-note { width: 150px; }
 .freight-table th, .freight-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: center; vertical-align: middle; white-space: nowrap; }
 .freight-table thead th { position: sticky; top: 0; z-index: 2; background: var(--surface-muted); }
 .freight-table td.clip { overflow: hidden; text-overflow: ellipsis; }
-.freight-table td.memo { text-align: left; }
-.freight-table td small { color: var(--text-muted); }
-.freight-table .number { text-align: right; font-variant-numeric: tabular-nums; }
+.freight-table td.left { text-align: left; }
+.freight-table td.right { text-align: right; font-variant-numeric: tabular-nums; }
+.freight-table tbody tr.selected td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.freight-table input[type='checkbox'] { width: 16px; height: 16px; cursor: pointer; }
 .freight-table tfoot td { position: sticky; bottom: 0; z-index: 1; font-weight: 800; background: var(--surface-muted); border-top: 1px solid var(--line); }
 .freight-empty { padding: 28px; color: var(--text-muted); }
-.freight-table .freight-class { width: 100%; }
+/* Values filled in automatically (지역, 내용's A → B, 거래처 연락처) until one is typed in. */
+.freight-auto { color: var(--text-muted); }
+.freight-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; }
+.freight-actions strong { margin-right: 4px; }
+.freight-class-change { width: auto; min-height: 32px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.freight-class-change:disabled { cursor: default; opacity: 0.55; }
+.freight-detail-form { width: min(460px, 100%); }
+.freight-detail-memo { margin: 0 0 12px; padding: 8px 10px; border-radius: 8px; background: var(--surface-muted); font-size: 13px; }
 .freight-tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .freight-tag[data-freight='크레인'] { background: #fff1d6; color: #7a4b00; }
 .freight-tag[data-freight='지게차'] { background: #e6f4e1; color: #2f5d1f; }
@@ -39,7 +51,6 @@
 .freight-tag[data-freight='사다리차'] { background: #fde6ef; color: #8a2350; }
 .freight-tag[data-freight='포크레인'] { background: #ece8e3; color: #5a4632; }
 .freight-tag[data-freight='화물차'] { background: #e1f0ff; color: #154a7a; }
-.freight-class { min-height: 30px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 12px; }
 .freight-excluded { margin: 14px 0 0; font-size: 13px; }
 .freight-excluded summary { cursor: pointer; color: var(--text-muted); font-weight: 700; }
 .freight-excluded ul { margin: 8px 0 0; padding: 0; list-style: none; }
@@ -48,7 +59,7 @@
 .freight-hint { margin: 12px 0 0; color: var(--text-muted); font-size: 12px; }
 @media (max-width: 900px) { .freight-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .freight-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-/* 장비's sub-menu: one button per kind with its count and 공급가액. */
+/* 장비's sub-menu: one button per kind with its count and 합계. */
 .freight-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 14px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-muted); }
 .freight-kinds button { display: grid; gap: 2px; min-width: 104px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
 .freight-kinds button span { font-size: 13px; font-weight: 800; }

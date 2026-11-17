@@ -762,12 +762,24 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   const researchProjects = workspaceStore?.data.researchProjects ?? localResearchProjects
   // 연구비 numbers stand in for orders wherever an order number is entered (회계반영) or shown.
   const researchOrders = researchProjects.map(researchOrder)
-  const projectLabelOf = (projectId: string) => {
+  // 장비·운반비 내역 shows each expense's 수주번호, 수주처 and 지역 (its 장소 unless one is typed in).
+  const projectInfoOf = (projectId: string) => {
     const adminYear = adminYearOfProject(projectId)
-    if (adminYear) return { orderNo: adminOrder(adminYear).orderNo, name: '관리비' }
+    if (adminYear) return { orderNo: adminOrder(adminYear).orderNo, name: '관리비', client: '관리비', region: '' }
     const order = [...orders, ...researchOrders].find(item => item.id === projectId)
-    return order ? { orderNo: order.orderNo, name: order.projectName } : { orderNo: '-', name: '' }
+    return order ? { orderNo: order.orderNo, name: order.projectName, client: order.client1 ?? '', region: order.region ?? '' } : { orderNo: '-', name: '', client: '', region: '' }
   }
+  // 운반비's 연락처 defaults to the 거래처's number in 거래관리 (물품구입처), as edited there.
+  const purchaseVendorPhones = new Map(
+    [...purchaseVendorContacts, ...customVendorContacts.purchase].flatMap((contact, index) => {
+      const key = ['purchase', contact.company, contact.contact, contact.tel, contact.mobile, index].join('|')
+      if (deletedVendorKeys.includes(key)) return []
+      const shown = vendorEdits[key] ?? contact
+      const phone = shown.mobile || shown.tel
+      return phone ? [[foldVendor(shown.company), phone] as const] : []
+    }),
+  )
+  const vendorPhoneOf = (vendor: string) => purchaseVendorPhones.get(foldVendor(vendor)) ?? ''
   // Vendors with 5+ expenses since 2025 across every project are suggested in the 거래처 field.
   // 거래처명 정리 looks at every year and also reads where each name came from, so the tax
   // invoice and card spellings are kept.
@@ -2604,7 +2616,8 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
 
         {view === 'freight' && <FreightExpenses
             expenses={expenses}
-            projectLabel={projectLabelOf}
+            projectInfo={projectInfoOf}
+            vendorPhone={vendorPhoneOf}
             initialYear={today.slice(0, 4)}
             onSave={next => updateWorkspace({ expenses: next })}
             renderOutput={table => renderOutputButtons(table)}

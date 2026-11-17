@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { freightOf, guessFreight, isFreightSetting } from './freightRules.ts'
+import { freightOf, guessFreight, guessRoute, isFreightSetting } from './freightRules.ts'
 
 const e = (vendor, memo, freight) => ({ vendor, memo, ...(freight ? { freight } : {}) })
 
@@ -57,4 +57,13 @@ test('a category picked by hand wins over the guess, and 제외 keeps it off the
   assert.equal(freightOf(e('다이소', '화물차 와이어부러쉬', '제외')), null)
   assert.equal(freightOf(e('다이소', '화물차 와이어부러쉬')), '화물차')
   assert.equal(isFreightSetting('택배'), false)
+})
+
+test('출발지 and 목적지 are read from an arrow in the 내용', () => {
+  assert.deepEqual(guessRoute('공장 -> 일산실업 화물비'), { from: '공장', to: '일산실업' })
+  assert.deepEqual(guessRoute('운반비(공장->영광)'), { from: '공장', to: '영광' })
+  assert.deepEqual(guessRoute('대호냉각기 -> 공장 운반비'), { from: '대호냉각기', to: '공장' })
+  assert.deepEqual(guessRoute('경기김포양촌읍 -> 경기남양주 화도읍 (오더번호:160642640, 오더일자:20260729)'), { from: '경기김포양촌읍', to: '경기남양주 화도읍' })
+  assert.equal(guessRoute('운반비'), null)
+  assert.equal(guessRoute('닥트운반(대명-공장)'), null)
 })

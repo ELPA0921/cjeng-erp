@@ -63,3 +63,11 @@ test('an expense 장비·운반비 구분 survives packing and validation, and o
   assert.deepEqual(validateCollection('expenses', [{ ...expense, freight: '제외' }]), [{ ...expense, freight: '제외' }])
   assert.throws(() => validateCollection('expenses', [{ ...expense, freight: '굴삭기' }]))
 })
+
+test('장비·운반비 details typed in survive packing and validation', () => {
+  const expense = { id: 'e2', projectId: 'p1', date: '2026-11-17', kind: '전자세금계산서', vendor: '개별화물', memo: '운반비', amount: 99000, freightFrom: '공장', freightTo: '영광', freightContact: '010-0000-0000', freightNote: '야간', freightPlace: '김포', freightHours: '8시간' }
+  const [row] = packWorkspace({ expenses: [expense], workLogs: [] }).expenses
+  assert.deepEqual(unpackExpense(row), expense)
+  assert.deepEqual(validateCollection('expenses', [row]), [expense])
+  assert.throws(() => validateCollection('expenses', [{ ...expense, freightHours: 8 }]))
+})

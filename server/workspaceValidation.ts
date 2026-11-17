@@ -146,7 +146,7 @@ export type WorkspaceSetting = typeof workspaceSettings[number]
 export function validateCollection(name: WorkspaceCollection, value: unknown) {
   if (name === 'expenses') {
     const rows = Array.isArray(value) ? value.map(unpackExpense) : value
-    const expenses=records(rows,['projectId','date','kind','vendor','category','memo','cardNumber','note','freight'],['supplyAmount','vatAmount','amount','sequence'],['projectId','date','kind','vendor','memo','amount'],['date'])
+    const expenses=records(rows,['projectId','date','kind','vendor','category','memo','cardNumber','note','freight','freightPlace','freightHours','freightFrom','freightTo','freightContact','freightNote'],['supplyAmount','vatAmount','amount','sequence'],['projectId','date','kind','vendor','memo','amount'],['date'])
     for (const expense of expenses) {
       if (expense.kind === '세금계산서') expense.kind = '전자세금계산서'
       if (expense.freight !== undefined && !isFreightSetting(expense.freight)) throw new Error('장비·운반비 구분을 확인하세요.')

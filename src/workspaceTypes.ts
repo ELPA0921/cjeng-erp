@@ -20,6 +20,13 @@ export type Expense = {
   sequence?: number
   /** 장비·운반비 내역: a category set by hand ('크레인', '지게차', '화물차') or '제외'; unset means guessed. */
   freight?: string
+  /** 장비·운반비 내역 details typed in: 장비's 장소 and 사용시간, 운반비's 출발지, 목적지 and 연락처, and a 비고 for either. */
+  freightPlace?: string
+  freightHours?: string
+  freightFrom?: string
+  freightTo?: string
+  freightContact?: string
+  freightNote?: string
 }
 
 export type WorkLog = {

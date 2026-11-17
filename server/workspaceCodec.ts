@@ -3,7 +3,7 @@ import type { WorkspaceData } from '../src/workspaceTypes.ts'
 // Store repeated field names once in code, while the API keeps named objects.
 const fields = ['id', 'projectId', 'date', 'worker', 'workerType', 'startTime', 'endTime', 'overtimeHours', 'location', 'task', 'note', 'hours'] as const
 // Optional expense fields come last so empty trailing slots can be dropped.
-const expenseFields = ['id', 'projectId', 'date', 'kind', 'vendor', 'memo', 'amount', 'supplyAmount', 'vatAmount', 'cardNumber', 'category', 'sequence', 'note', 'freight'] as const
+const expenseFields = ['id', 'projectId', 'date', 'kind', 'vendor', 'memo', 'amount', 'supplyAmount', 'vatAmount', 'cardNumber', 'category', 'sequence', 'note', 'freight', 'freightPlace', 'freightHours', 'freightFrom', 'freightTo', 'freightContact', 'freightNote'] as const
 const requiredExpenseFields = 7
 
 export function unpackWorkLog(row: unknown): unknown {

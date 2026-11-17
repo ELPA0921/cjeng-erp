@@ -61,3 +61,17 @@ export const isFreightSetting = (value: unknown): value is FreightSetting => (fr
 
 /** 운반비 has one kind (화물차), so it is shown by the group's name. */
 export const freightLabel = (category: FreightCategory) => category === '화물차' ? '운반비' : category
+
+/**
+ * 출발지 and 목적지 read from a 내용 like "공장 -> 일산실업 화물비" or "운반비(공장->영광)":
+ * an arrow between the two, with order numbers in brackets and words like 운반비 dropped.
+ */
+export function guessRoute(memo: string): { from: string; to: string } | null {
+  const text = memo.replace(/\((오더|주문)[^)]*\)/g, ' ')
+  const inner = /\(([^()]*(->|→|➝|⇒)[^()]*)\)/.exec(text)?.[1] ?? text
+  const parts = inner.split(/\s*(?:->|→|➝|⇒)\s*/)
+  if (parts.length !== 2) return null
+  const clean = (value: string) => value.replace(/(화물비|운반비|운송비|운송료|운임|운반|화물)\s*$/, '').replace(/^\s*(화물비|운반비|운송비|운송료|운임)\s*/, '').trim()
+  const from = clean(parts[0]), to = clean(parts[1])
+  return from && to ? { from, to } : null
+}
