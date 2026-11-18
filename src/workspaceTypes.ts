@@ -79,6 +79,34 @@ export type CardAccounting = {
 /** date: the day the share's expense is filed under (the invoice's date unless changed). */
 export type CardAccountingSplit = { expenseId: string; orderNo: string; memo: string; supplyAmount: number; date?: string }
 
+/**
+ * 장비·운반비 내역 up to the day the 「장비 사용 내역」 and 「화물차 사용내역」 Excel files end: one line per
+ * day of use or per trip, as recorded there. Later 장비·운반비 come from the expenses.
+ * category is one of the freight categories, or '제외' to leave the line off the list.
+ */
+export type FreightRecord = {
+  id: string
+  date: string
+  category: string
+  orderNo: string
+  /** 사용처 */
+  client: string
+  vendor: string
+  /** 장비: its kind and size ("25t 크레인"); 운반비: what was carried. */
+  item: string
+  /** 운반비: the truck ("5t", "1대"). */
+  vehicle?: string
+  place?: string
+  hours?: string
+  from?: string
+  to?: string
+  contact?: string
+  note?: string
+  amount: number
+  /** '제외': kept off the list, its category kept for when it is put back. */
+  excluded?: string
+}
+
 /** 연구비: one 연구 registered under a 269NN number (26901, 26902, ...). */
 export type ResearchProject = { id: string; orderNo: string; name: string }
 
@@ -100,9 +128,11 @@ export type WorkspaceData = {
   estimateSettings?: Partial<EstimateSettings>
   /** 연구비: the 연구 registered under 269NN numbers. Older snapshots have none. */
   researchProjects?: ResearchProject[]
+  /** 장비·운반비 내역 brought over from the Excel files. Older snapshots have none. */
+  freightRecords?: FreightRecord[]
 }
 export type WorkspaceSnapshot = { data: WorkspaceData; revision: string; initialized: boolean; mode?: 'rows' }
 export type SharedWorkspaceStore = WorkspaceSnapshot & {
   save: (patch: Partial<WorkspaceData>, revision: string) => Promise<boolean>
 }
-export const emptyWorkspace = (): WorkspaceData => ({expenses:[],workLogs:[],purchases:[],inactiveVendorKeys:[],deletedVendorKeys:[],vendorEdits:{},customVendorContacts:{purchase:[],order:[]},deliveries:[],cardAccounting:[],estimateItems:[],estimates:[],materialQuotes:[],estimateSettings:{},researchProjects:[]})
+export const emptyWorkspace = (): WorkspaceData => ({expenses:[],workLogs:[],purchases:[],inactiveVendorKeys:[],deletedVendorKeys:[],vendorEdits:{},customVendorContacts:{purchase:[],order:[]},deliveries:[],cardAccounting:[],estimateItems:[],estimates:[],materialQuotes:[],estimateSettings:{},researchProjects:[],freightRecords:[]})

@@ -61,7 +61,14 @@ export function freightOf(expense: Pick<Expense, 'vendor' | 'memo' | 'freight'>)
   return guessFreight(expense)
 }
 
+export const isFreightCategory = (value: unknown): value is FreightCategory => (freightCategories as readonly unknown[]).includes(value)
 export const isFreightSetting = (value: unknown): value is FreightSetting => (freightSettings as readonly unknown[]).includes(value)
+
+/**
+ * The Excel files 「장비 사용 내역」 and 「화물차 사용내역」 run to this day; their lines are the 장비·운반비
+ * 내역 up to it, and expenses are read from the day after.
+ */
+export const freightRecordsUntil = '2026-11-13'
 
 /** 운반비 has one kind (화물차), so it is shown by the group's name. */
 export const freightLabel = (category: FreightCategory) => category === '화물차' ? '운반비' : category

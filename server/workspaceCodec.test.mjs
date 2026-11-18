@@ -4,7 +4,7 @@ import { packWorkspace, unpackExpense } from './workspaceCodec.ts'
 import { validateCollection, validateWorkspace } from './workspaceValidation.ts'
 
 const log = { id:'w1', projectId:'work-unassigned', date:'2023-01-05', worker:'작업자', workerType:'인력', startTime:'07:30', endTime:'11:30', overtimeHours:0, location:'인천공장', task:'배관 보수', note:'원본 공사 보존', hours:4 }
-const data = { expenses:[], workLogs:[log], purchases:[], deliveries:[], inactiveVendorKeys:[], deletedVendorKeys:[], vendorEdits:{}, customVendorContacts:{purchase:[],order:[]}, cardAccounting:[], estimateItems:[], estimates:[], materialQuotes:[], researchProjects:[], estimateSettings:{} }
+const data = { expenses:[], workLogs:[log], purchases:[], deliveries:[], inactiveVendorKeys:[], deletedVendorKeys:[], vendorEdits:{}, customVendorContacts:{purchase:[],order:[]}, cardAccounting:[], estimateItems:[], estimates:[], materialQuotes:[], researchProjects:[], freightRecords:[], estimateSettings:{} }
 
 test('compact work logs round-trip all fields and retain legacy object support', () => {
   assert.deepEqual(validateWorkspace(packWorkspace(data)), data)
@@ -70,4 +70,13 @@ test('장비·운반비 details typed in survive packing and validation', () => 
   assert.deepEqual(unpackExpense(row), expense)
   assert.deepEqual(validateCollection('expenses', [row]), [expense])
   assert.throws(() => validateCollection('expenses', [{ ...expense, freightHours: 8 }]))
+})
+
+test('장비·운반비 lines from the Excel files keep their details, and only a known 분류 is taken', () => {
+  const line = { id: 'fr-excel-e363', date: '2026-11-13', category: '크레인', orderNo: '26028', client: '진영', vendor: '대한카고크레인', item: '5t 카고크레인', place: '오류동공장', contact: '010-5246-4507', amount: 770000 }
+  assert.deepEqual(validateCollection('freightRecords', [line]), [line])
+  assert.deepEqual(validateCollection('freightRecords', [{ ...line, excluded: '제외' }]), [{ ...line, excluded: '제외' }])
+  assert.throws(() => validateCollection('freightRecords', [{ ...line, category: '제외' }]))
+  assert.throws(() => validateCollection('freightRecords', [{ ...line, excluded: '예' }]))
+  assert.throws(() => validateCollection('freightRecords', [{ ...line, amount: '770,000' }]))
 })

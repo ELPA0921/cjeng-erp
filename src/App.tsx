@@ -769,6 +769,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     const order = [...orders, ...researchOrders].find(item => item.id === projectId)
     return order ? { orderNo: order.orderNo, name: order.projectName, client: order.client1 ?? '', region: order.region ?? '' } : { orderNo: '-', name: '', client: '', region: '' }
   }
+  const orderNameOf = (orderNo: string) => [...orders, ...researchOrders].find(item => item.orderNo === orderNo)?.projectName ?? ''
   // 운반비's 연락처 defaults to the 거래처's number in 거래관리 (물품구입처), as edited there.
   const purchaseVendorPhones = new Map(
     [...purchaseVendorContacts, ...customVendorContacts.purchase].flatMap((contact, index) => {
@@ -2616,10 +2617,12 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
 
         {view === 'freight' && <FreightExpenses
             expenses={expenses}
+            records={workspaceStore?.data.freightRecords ?? []}
             projectInfo={projectInfoOf}
+            orderName={orderNameOf}
             vendorPhone={vendorPhoneOf}
             initialYear={today.slice(0, 4)}
-            onSave={next => updateWorkspace({ expenses: next })}
+            onSave={patch => updateWorkspace(patch)}
             renderOutput={table => renderOutputButtons(table)}
           />}
         {view === 'deliveries' && <DeliveryPerformance workspaceStore={workspaceStore} />}

@@ -1,6 +1,6 @@
 import { cardAccountingStatuses, type WorkspaceData } from '../src/workspaceTypes.ts'
 import { costKinds, grades, quoteGrades, steelShapes } from '../src/estimateTypes.ts'
-import { isFreightSetting } from '../src/freightRules.ts'
+import { isFreightCategory, isFreightSetting } from '../src/freightRules.ts'
 import { packWorkspace, unpackExpense, unpackWorkLog } from './workspaceCodec.ts'
 
 const vendorFields = ['company','contact','mobile','tel','fax','email','address','item']
@@ -137,7 +137,7 @@ function materialQuotes(value: unknown) {
   })
 }
 
-export const workspaceCollections = ['expenses', 'workLogs', 'purchases', 'deliveries', 'cardAccounting', 'estimateItems', 'estimates', 'materialQuotes', 'researchProjects'] as const
+export const workspaceCollections = ['expenses', 'workLogs', 'purchases', 'deliveries', 'cardAccounting', 'estimateItems', 'estimates', 'materialQuotes', 'researchProjects', 'freightRecords'] as const
 export const workspaceSettings = ['inactiveVendorKeys', 'deletedVendorKeys', 'vendorEdits', 'customVendorContacts', 'estimateSettings'] as const
 export type WorkspaceCollection = typeof workspaceCollections[number]
 export type WorkspaceSetting = typeof workspaceSettings[number]
@@ -178,6 +178,13 @@ export function validateCollection(name: WorkspaceCollection, value: unknown) {
   if (name === 'estimateItems') return estimateItems(value)
   if (name === 'estimates') return estimates(value)
   if (name === 'materialQuotes') return materialQuotes(value)
+  if (name === 'freightRecords') {
+    const freightRecords=records(value ?? [],['date','category','orderNo','client','vendor','item','vehicle','place','hours','from','to','contact','note','excluded'],['amount'],['date','category','amount'],['date'])
+    // The Excel files leave some 거래처, 내용 and 수주번호 cells blank.
+    for (const row of freightRecords) for (const field of ['orderNo','client','vendor','item']) row[field] ??= ''
+    for (const row of freightRecords) if (!isFreightCategory(row.category) || (row.excluded !== undefined && row.excluded !== '제외')) throw new Error('장비·운반비 구분을 확인하세요.')
+    return freightRecords
+  }
   if (name === 'researchProjects') {
     // 연구비 numbers are 269NN (26901–26999), each used once.
     const projects=records(value ?? [],['orderNo','name'],[],['orderNo','name'],[])
