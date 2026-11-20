@@ -2625,7 +2625,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
             onSave={patch => updateWorkspace(patch)}
             renderOutput={table => renderOutputButtons(table)}
           />}
-        {view === 'deliveries' && <DeliveryPerformance workspaceStore={workspaceStore} />}
+        {view === 'deliveries' && <DeliveryPerformance workspaceStore={workspaceStore} onPrint={printExportTable} />}
         {(view === 'estimateCosts' || view === 'estimates') && <Estimates workspaceStore={workspaceStore} screen={view === 'estimateCosts' ? 'costs' : 'estimates'} vendors={expenseVendors} onOpenCosts={() => navigateTo('estimateCosts')} />}
         {view === 'home' && (
           <section className="home-view">

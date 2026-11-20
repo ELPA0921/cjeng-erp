@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import seed from './deliverySeed.json'
 import ModalClose from './ModalClose'
+import OutputMenu from './OutputMenu'
+import type { OutputTable } from './FreightExpenses'
 import type { SharedWorkspaceStore } from './workspaceTypes'
 import {
   deliveryColumns, deliveryCsv, deliveryKey, emptyDeliveryFilters,
@@ -34,7 +36,7 @@ function downloadCsv(records: Delivery[], name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-export default function DeliveryPerformance({workspaceStore}:{workspaceStore?:SharedWorkspaceStore}) {
+export default function DeliveryPerformance({workspaceStore, onPrint}:{workspaceStore?:SharedWorkspaceStore; onPrint:(table:OutputTable)=>void}) {
   const [localSaved, setSaved] = useState(readDeliveries)
   const saved=workspaceStore?{records:workspaceStore.data.deliveries,error:''}:localSaved
   const [filters, setFilters] = useState(emptyDeliveryFilters)
@@ -48,7 +50,6 @@ export default function DeliveryPerformance({workspaceStore}:{workspaceStore?:Sh
   const [selected, setSelected] = useState<string[]>([])
   const [editing, setEditing] = useState<Delivery | null>(null)
   const [saving, setSaving] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if(workspaceStore)return
@@ -76,6 +77,37 @@ export default function DeliveryPerformance({workspaceStore}:{workspaceStore?:Sh
   const allChosen = visible.length > 0 && chosen.length === visible.length
   const toggleRow = (id: string) => setSelected(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id])
 
+  /** Writes the whole list back; another tab's or person's rows are kept because it starts from the latest copy. */
+  async function store(change: (latest: Delivery[]) => Delivery[]) {
+    const latest = workspaceStore ? workspaceStore.data.deliveries : readDeliveries().records
+    const records = change(latest)
+    if (workspaceStore) return workspaceStore.save({ deliveries: records }, workspaceStore.revision)
+    localStorage.setItem(storageKey, JSON.stringify({ version: 1, records })); setSaved({ records, error: '' })
+    return true
+  }
+
+  async function removeChosen() {
+    if (!chosen.length || saving) return
+    const names = chosen.slice(0, 3).map(record => `${record.date} ${record.company || record.client}`).join(', ')
+    if (!window.confirm(`선택한 납품실적 ${chosen.length}건을 삭제할까요?\n${names}${chosen.length > 3 ? ' 외' : ''}\n삭제하면 되돌릴 수 없습니다.`)) return
+    const ids = chosen.map(record => record.id)
+    setSaving(true); setError(''); setMessage('')
+    try {
+      if (!await store(latest => latest.filter(record => !ids.includes(record.id)))) return
+      setSelected([])
+      setMessage(`납품실적 ${ids.length}건을 삭제했습니다.`)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '삭제하지 못했습니다.')
+    } finally { setSaving(false) }
+  }
+
+  const printTable = () => onPrint({
+    title: `납품실적${activeFilters ? ' (검색 결과)' : ''}`,
+    columns: deliveryColumns.map(([, label]) => label),
+    rows: filtered.map(record => deliveryColumns.map(([key]) => record[key])),
+    totals: [[`합계 ${filtered.length}건`, ...deliveryColumns.slice(1).map(() => '')]],
+  })
+
   async function saveEdit(event: FormEvent) {
     event.preventDefault()
     if (!editing || saving) return
@@ -85,11 +117,11 @@ export default function DeliveryPerformance({workspaceStore}:{workspaceStore?:Sh
     record.date = date
     setSaving(true); setError(''); setMessage('')
     try {
-      const latest = workspaceStore ? workspaceStore.data.deliveries : readDeliveries().records
-      if (!latest.some(item => item.id === record.id)) throw new Error('다른 사람이 이미 지운 납품실적입니다. 새로고침해 주세요.')
-      const records = latest.map(item => item.id === record.id ? record : item)
-      if (workspaceStore) { if (!await workspaceStore.save({ deliveries: records }, workspaceStore.revision)) return }
-      else { localStorage.setItem(storageKey, JSON.stringify({ version: 1, records })); setSaved({ records, error: '' }) }
+      const saved = await store(latest => {
+        if (!latest.some(item => item.id === record.id)) throw new Error('다른 사람이 이미 지운 납품실적입니다. 새로고침해 주세요.')
+        return latest.map(item => item.id === record.id ? record : item)
+      })
+      if (!saved) return
       setEditing(null); setSelected([])
       setMessage(`${record.date} ${record.company || record.client} 납품실적을 수정했습니다.`)
     } catch (cause) {
@@ -137,14 +169,10 @@ export default function DeliveryPerformance({workspaceStore}:{workspaceStore?:Sh
       <div className="panel-heading">
         <div><h3>납품실적 전체조회</h3><span>전체 {saved.records.length.toLocaleString()}건 · 검색 결과 {filtered.length.toLocaleString()}건</span></div>
         <div className="delivery-actions">
-          <button type="button" className="ghost-button compact-button" onClick={() => downloadCsv([], '납품실적_업로드양식')}>CSV 양식</button>
-          <button type="button" className="ghost-button compact-button" disabled={!filtered.length} onClick={() => downloadCsv(filtered, activeFilters ? '납품실적_검색결과' : '납품실적_전체')}>{activeFilters ? '검색 결과 CSV' : '전체 CSV 내보내기'}</button>
-          <button type="button" className="primary-button compact-button" disabled={reading || Boolean(saved.error)} onClick={() => inputRef.current?.click()}>{reading ? '파일 읽는 중…' : 'CSV로 추가'}</button>
-          <input ref={inputRef} className="delivery-file" type="file" accept=".csv,text/csv" aria-label="납품실적 CSV 파일" onChange={event => {
-            const file = event.target.files?.[0]
-            event.target.value = ''
-            if (file) void readFile(file)
-          }} />
+          {reading && <span className="delivery-reading">파일 읽는 중…</span>}
+          <OutputMenu empty={!filtered.length} onPrint={printTable}
+            onExport={() => downloadCsv(filtered, activeFilters ? '납품실적_검색결과' : '납품실적_전체')}
+            onImportFile={reading || saved.error ? undefined : file => void readFile(file)} />
         </div>
       </div>
       <p className="delivery-storage-note">{workspaceStore ? '추가한 납품실적은 직원들과 공유됩니다. 저장 후 다른 화면에도 자동으로 반영됩니다.' : '추가한 데이터는 현재 브라우저에 저장됩니다. 다른 PC에서 보려면 CSV로 내보낸 후 불러오세요.'}</p>
@@ -178,13 +206,13 @@ export default function DeliveryPerformance({workspaceStore}:{workspaceStore?:Sh
         </div></details>
       </section>
 
-      <div className="delivery-result-bar"><strong>검색 결과 {filtered.length.toLocaleString()}건 <small>/ 전체 {saved.records.length.toLocaleString()}건</small></strong><div className="delivery-edit-actions"><span>선택 {chosen.length}건</span><button type="button" className="ghost-button compact-button" disabled={chosen.length !== 1 || saving} title="한 건을 체크하면 날짜·발주처·주소·품명·규격·풍량·비고를 고칠 수 있습니다" onClick={() => { setError(''); setEditing({ ...chosen[0] }) }}>수정</button></div><label>표시 개수<select aria-label="페이지당 표시 개수" value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); goToPage(1) }}>{[25, 50, 100].map(size => <option key={size} value={size}>{size}건</option>)}<option value={Number.MAX_SAFE_INTEGER}>전체</option></select></label></div>
+      <div className="delivery-result-bar"><strong>검색 결과 {filtered.length.toLocaleString()}건 <small>/ 전체 {saved.records.length.toLocaleString()}건</small></strong><div className="delivery-edit-actions"><span>선택 {chosen.length}건</span><button type="button" className="ghost-button compact-button" disabled={chosen.length !== 1 || saving} title="한 건을 체크하면 날짜·발주처·주소·품명·규격·풍량·비고를 고칠 수 있습니다" onClick={() => { setError(''); setEditing({ ...chosen[0] }) }}>수정</button><button type="button" className="ghost-button compact-button delivery-delete" disabled={!chosen.length || saving} onClick={() => void removeChosen()}>삭제</button></div><label>표시 개수<select aria-label="페이지당 표시 개수" value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); goToPage(1) }}>{[25, 50, 100].map(size => <option key={size} value={size}>{size}건</option>)}<option value={Number.MAX_SAFE_INTEGER}>전체</option></select></label></div>
       <div className="table-wrap delivery-table-wrap"><table className="delivery-table"><caption className="delivery-sr-only">납품실적 검색 결과</caption><thead><tr>
         <th scope="col" className="delivery-check"><input type="checkbox" aria-label="이 페이지 전체 선택" checked={allChosen} disabled={!visible.length} onChange={() => setSelected(allChosen ? [] : visible.map(record => record.id))} /></th>
         {deliveryColumns.map(([key, label]) => <th key={key} scope="col" aria-sort={sort.key === key ? sort.direction === 'asc' ? 'ascending' : 'descending' : 'none'}><button type="button" onClick={() => { setSort(current => ({ key, direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' })); goToPage(1) }}>{label} <span aria-hidden="true">{sort.key === key ? sort.direction === 'asc' ? '↑' : '↓' : '↕'}</span></button></th>)}
       </tr></thead><tbody>{visible.map(record => { const checked = selected.includes(record.id); return <tr key={record.id} className={checked ? 'selected' : undefined}><td className="delivery-check"><input type="checkbox" aria-label={`선택 ${record.date} ${record.company || record.client}`} checked={checked} onChange={() => toggleRow(record.id)} /></td>{deliveryColumns.map(([key]) => <td key={key}>{record[key] || <span className="delivery-empty">—</span>}</td>)}</tr> })}{!visible.length && <tr><td colSpan={deliveryColumns.length + 1} className="delivery-no-results">검색 조건에 맞는 납품실적이 없습니다. 검색어를 바꾸거나 조건을 초기화해 주세요.</td></tr>}</tbody></table></div>
       <nav className="delivery-pagination" aria-label="납품실적 페이지 이동"><span>{filtered.length ? (currentPage - 1) * pageSize + 1 : 0}–{Math.min(currentPage * pageSize, filtered.length)} / {filtered.length}건</span><div><button className="ghost-button compact-button" type="button" disabled={currentPage === 1} onClick={() => goToPage(currentPage - 1)}>이전</button><span>{currentPage} / {pageCount}</span><button className="ghost-button compact-button" type="button" disabled={currentPage === pageCount} onClick={() => goToPage(currentPage + 1)}>다음</button></div></nav>
-      <details className="delivery-guide"><summary>CSV 추가 방법</summary><p>CSV 양식을 내려받아 첫 행의 8개 머리글을 유지해 주세요. 날짜와 품명은 필수이며, 날짜는 YYYY-MM-DD 형식입니다. UTF-8 또는 Excel의 한국어 CSV를 사용할 수 있습니다.</p><p>업로드 후 미리보기를 확인하고 ‘추가 확정’을 누르세요. 8개 항목이 모두 같은 행은 중복으로 제외하며, 비고나 규격이 다르면 별도 실적으로 추가합니다. 오류 행이 있으면 파일을 수정한 뒤 다시 업로드해 주세요.</p></details>
+      <details className="delivery-guide"><summary>CSV 추가 방법</summary><p>「인쇄 / CSV → CSV 내보내기」로 받은 파일의 첫 행 8개 머리글을 유지한 채 줄을 추가하고, 「CSV 가져오기」로 올려 주세요. 날짜와 품명은 필수이며, 날짜는 YYYY-MM-DD 형식입니다. UTF-8 또는 Excel의 한국어 CSV를 사용할 수 있습니다.</p><p>업로드 후 미리보기를 확인하고 ‘추가 확정’을 누르세요. 8개 항목이 모두 같은 행은 중복으로 제외하며, 비고나 규격이 다르면 별도 실적으로 추가합니다. 오류 행이 있으면 파일을 수정한 뒤 다시 업로드해 주세요.</p></details>
     </div>
     {editing && <div className="modal-backdrop" role="presentation">
       <form className="modal-panel form-panel delivery-edit-form" onSubmit={event => void saveEdit(event)}>
