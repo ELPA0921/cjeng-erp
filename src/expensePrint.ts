@@ -12,9 +12,9 @@ const columns = [
   { label: '비고', width: 10.1, className: 'center' },
 ]
 
-/** Splits rows into pages; the last page always keeps one slot for the 합계 row. */
-export function paginateSheet<T>(rows: T[], perPage = sheetRowsPerPage) {
-  const pageCount = Math.max(1, Math.ceil((rows.length + 1) / perPage))
+/** Splits rows into pages; with a 합계 row the last page always keeps one slot for it. */
+export function paginateSheet<T>(rows: T[], perPage = sheetRowsPerPage, totalRow = true) {
+  const pageCount = Math.max(1, Math.ceil((rows.length + (totalRow ? 1 : 0)) / perPage))
   return Array.from({ length: pageCount }, (_, index) => rows.slice(index * perPage, (index + 1) * perPage))
 }
 
@@ -22,20 +22,24 @@ const escapeHtml = (value: string) => value.replace(/[&<>"']/g, char => ({ '&': 
 const money = (value: number) => new Intl.NumberFormat('ko-KR').format(value)
 const cell = (text: string, className: string) => `<td class="${className}"><span class="fit">${escapeHtml(text)}</span></td>`
 
-export function expenseSheetHtml(title: string, rows: ExpenseSheetRow[]) {
+/**
+ * The sheet for rows. A single on-screen page prints with firstPage set to its page number and
+ * totalRow off, since the 합계 belongs to the whole 지출내역서, not one page of it.
+ */
+export function expenseSheetHtml(title: string, rows: ExpenseSheetRow[], { totalRow = true, firstPage = 1 } = {}) {
   const total = rows.reduce((sum, row) => sum + row.supplyAmount, 0)
-  const pages = paginateSheet(rows)
+  const pages = paginateSheet(rows, sheetRowsPerPage, totalRow)
   const head = `<colgroup>${columns.map(column => `<col style="width:${column.width}%">`).join('')}</colgroup>
     <thead><tr>${columns.map(column => `<th>${column.label}</th>`).join('')}</tr></thead>`
   const body = pages.map((pageRows, index) => {
-    const last = index === pages.length - 1
+    const last = totalRow && index === pages.length - 1
     const blanks = (last ? sheetRowsPerPage - 1 : sheetRowsPerPage) - pageRows.length
     const lines = [
       ...pageRows.map(row => `<tr>${[row.date, row.vendor, row.memo, money(row.supplyAmount), row.cardNumber, row.note].map((text, column) => cell(text, columns[column].className)).join('')}</tr>`),
       ...Array.from({ length: blanks }, () => `<tr>${columns.map(() => '<td></td>').join('')}</tr>`),
       ...(last ? [`<tr class="total"><td colspan="3" class="center">합계</td>${cell(money(total), 'num')}<td colspan="2"></td></tr>`] : []),
     ]
-    return `<section class="sheet"><h1><span class="fit">${escapeHtml(title)}</span></h1><table>${head}<tbody>${lines.join('')}</tbody></table><div class="page-number">${index + 1}</div></section>`
+    return `<section class="sheet"><h1><span class="fit">${escapeHtml(title)}</span></h1><table>${head}<tbody>${lines.join('')}</tbody></table><div class="page-number">${firstPage + index}</div></section>`
   }).join('')
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
     /* A zero page margin leaves the browser no room for its date/title/URL header
@@ -68,9 +72,9 @@ export function expenseSheetHtml(title: string, rows: ExpenseSheetRow[]) {
   </script></body></html>`
 }
 
-export function printExpenseSheet(title: string, rows: ExpenseSheetRow[]) {
+export function printExpenseSheet(title: string, rows: ExpenseSheetRow[], options?: { totalRow?: boolean; firstPage?: number }) {
   const printWindow = window.open('', '_blank', 'width=900,height=1000')
   if (!printWindow) return
-  printWindow.document.write(expenseSheetHtml(title, rows))
+  printWindow.document.write(expenseSheetHtml(title, rows, options))
   printWindow.document.close()
 }

@@ -1341,11 +1341,12 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
   // Rows on the same date print bottom-up from the newest-first screen.
   // A personal card's "card number" holds the owner's name, so it moves to 비고.
   // 관리비 sheets are titled by their name alone ("2026년 관리비 지출내역"), without the 26000_ prefix.
-  const printExpenses = () => printExpenseSheet(
+  // 현재 페이지 인쇄 prints the rows of the page on screen the same way, numbered as that page and without 합계.
+  const printExpenses = (rows = filteredExpenses, options?: { totalRow: boolean; firstPage: number }) => printExpenseSheet(
     selectedProject && isAdminProject(selectedProject.id) ? selectedProject.projectName
       // 22년 이전 공사 use the 공사명 as their 수주번호; print it once.
       : [...new Set([selectedProject?.orderNo, selectedProject?.client1, selectedProject?.projectName].filter(Boolean))].join('_'),
-    [...filteredExpenses].sort((a, b) => a.date.localeCompare(b.date) || newestFirst(b, a)).map(expense => {
+    [...rows].sort((a, b) => a.date.localeCompare(b.date) || newestFirst(b, a)).map(expense => {
       const personal = normalizeExpenseKind(expense.kind) === '개인카드'
       return {
         date: expense.date,
@@ -1357,7 +1358,9 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
         note: [personal ? expense.cardNumber : '', expense.note].filter(Boolean).join(' '),
       }
     }),
+    options,
   )
+  const printExpensePage = () => printExpenses(pagedExpenses, { totalRow: false, firstPage: shownExpensePage + 1 })
   const expensesExportTable: ExportTable = {
     title: `${selectedProject?.orderNo ?? ''} 지출내역`,
     columns: [
@@ -1820,11 +1823,13 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
     table: ExportTable,
     onImport?: (records: CsvRecord[]) => void,
     onPrint = () => printExportTable(table),
+    onPrintPage?: () => void,
   ) {
     return (
       <OutputMenu
         empty={table.rows.length === 0}
         onPrint={onPrint}
+        onPrintPage={onPrintPage}
         onExport={() => exportTableToCsv(table)}
         onImportFile={onImport && ((file) => readCsvFile(file, onImport))}
       />
@@ -3832,7 +3837,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
                   <button className="ghost-button" type="button" onClick={() => setCleaningVendors(true)}>
                     거래처명 정리
                   </button>
-                  {renderOutputButtons(expensesExportTable, importExpensesFromCsv, printExpenses)}
+                  {renderOutputButtons(expensesExportTable, importExpensesFromCsv, () => printExpenses(), printExpensePage)}
                 </div>
               </div>
               <div className="table-wrap">

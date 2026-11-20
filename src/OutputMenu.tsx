@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 
 /**
- * "인쇄 / CSV" button that opens 인쇄, CSV 내보내기 and (when onImportFile is given) CSV 가져오기.
+ * "인쇄 / CSV" button that opens 인쇄, 현재 페이지 인쇄 (when onPrintPage is given), CSV 내보내기
+ * and (when onImportFile is given) CSV 가져오기.
  * Clicking outside or pressing Esc closes it.
  */
-export default function OutputMenu({ empty, onPrint, onExport, onImportFile }: {
+export default function OutputMenu({ empty, onPrint, onPrintPage, onExport, onImportFile }: {
   /** No rows to print or export. */
   empty: boolean
   onPrint: () => void
+  /** Prints only the rows of the page shown on screen. */
+  onPrintPage?: () => void
   onExport: () => void
   onImportFile?: (file: File) => void
 }) {
@@ -27,6 +30,7 @@ export default function OutputMenu({ empty, onPrint, onExport, onImportFile }: {
     <summary className="ghost-button compact-button">인쇄 / CSV</summary>
     <div className="output-menu-list" role="menu">
       <button type="button" role="menuitem" disabled={empty} onClick={run(onPrint)}>인쇄</button>
+      {onPrintPage && <button type="button" role="menuitem" disabled={empty} onClick={run(onPrintPage)}>현재 페이지 인쇄</button>}
       <button type="button" role="menuitem" disabled={empty} onClick={run(onExport)}>CSV 내보내기</button>
       {onImportFile && <label role="menuitem">
         CSV 가져오기

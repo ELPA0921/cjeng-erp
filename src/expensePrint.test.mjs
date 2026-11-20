@@ -29,3 +29,13 @@ test('the 비고 column prints the row note, used for personal card owners', () 
   const html = expenseSheetHtml('t', [{ ...row(1), cardNumber: '개인카드', note: '김해운' }])
   assert.ok(html.includes('<span class="fit">개인카드</span></td><td class="center"><span class="fit">김해운</span>'))
 })
+
+test('one on-screen page prints as its own numbered sheet without the 합계 row', () => {
+  assert.deepEqual(paginateSheet(Array(25).fill(1), 25, false).map(page => page.length), [25])
+  const html = expenseSheetHtml('t', Array.from({ length: 25 }, (_, i) => row(i)), { totalRow: false, firstPage: 3 })
+  const pages = html.split('<section class="sheet">').slice(1)
+  assert.equal(pages.length, 1)
+  assert.equal((pages[0].match(/<tr>/g) ?? []).length - 1, sheetRowsPerPage)
+  assert.doesNotMatch(html, /합계/)
+  assert.ok(pages[0].includes('<div class="page-number">3</div>'))
+})
