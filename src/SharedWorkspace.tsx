@@ -226,7 +226,7 @@ export default function SharedWorkspace() {
   if (session?.user) return <SignedInWorkspace key={session.user.sub} user={session.user} canInitialize={session.canInitialize===true} canManageUsers={session.canManageUsers===true} onSignOut={signOut} />
   return <main className="workspace-login"><section className="workspace-login-card">
     <span className="workspace-login-brand">CHANGJO ENGINEERING</span>
-    <h1>창조이엔지 공사 관리</h1>
+    <h1>창조이엔지 ERP</h1>
     <p>허용된 직원 Google 계정으로 로그인해 주세요.</p>
     {error && <p role="alert">{error}</p>}
     {signingIn ? <p role="status">로그인 확인 중입니다.</p> : session?.clientId && session.nonce ? <GoogleButton clientId={session.clientId} nonce={session.nonce} onCredential={onCredential} /> : <button type="button" className="ghost-button" onClick={() => void loadSession()}>로그인 연결 확인</button>}

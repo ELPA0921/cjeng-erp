@@ -2507,7 +2507,7 @@ function App({ orderStore, workspaceStore }: { orderStore?: SharedOrderStore; wo
             </Fragment>
           })}
         </nav>
-        <div className="sidebar-footer"><span className="workspace-avatar">창</span><span>주식회사 창조이엔지<small>공사 관리 시스템</small></span></div>
+        <div className="sidebar-footer"><span className="workspace-avatar">창</span><span>주식회사 창조이엔지<small>ERP</small></span></div>
       </aside>
 
       <section className="workspace">
